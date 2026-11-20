@@ -1,0 +1,121 @@
+import { memo, useState } from "react";
+import { Link } from "@tanstack/react-router";
+import { Check, ImageOff, Plus } from "lucide-react";
+import { Badge } from "@/components/ui/primitives";
+import { cn, cleanVersion, imageSrc, statusTone, timeAgo } from "@/lib/utils";
+
+export interface GameCardData {
+  id: number;
+  title: string;
+  creator?: string;
+  version?: string | null;
+  cover?: string | null;
+  engine?: string | null;
+  prefixes?: string[];
+  updatedAt?: number | null;
+  isNew?: boolean;
+  hasUpdate?: boolean;
+  rating?: number | null;
+}
+
+const TONE_TEXT = { success: "text-success", warning: "text-warning", danger: "text-danger", info: "text-info" } as const;
+
+export function Cover({ src, alt, className }: { src?: string | null; alt: string; className?: string }) {
+  const [state, setState] = useState<"loading" | "ok" | "error">(src ? "loading" : "error");
+  return (
+    <div data-cover-wrap className={cn("relative overflow-hidden bg-surface-2", className)}>
+      {state === "loading" && <div className="skeleton absolute inset-0" aria-hidden />}
+      {state === "error" ? (
+        <div className="absolute inset-0 grid place-items-center text-faint">
+          <ImageOff className="size-6" aria-hidden />
+        </div>
+      ) : (
+        <img
+          data-cover
+          src={imageSrc(src)}
+          alt={alt}
+          loading="lazy"
+          decoding="async"
+          draggable={false}
+          onLoad={() => setState("ok")}
+          onError={() => setState("error")}
+          className={cn("absolute inset-0 size-full object-cover transition-opacity duration-300", state === "ok" ? "opacity-100" : "opacity-0")}
+        />
+      )}
+    </div>
+  );
+}
+
+export const GameCard = memo(function GameCard({
+  game,
+  inLibrary,
+  onToggleLibrary,
+}: {
+  game: GameCardData;
+  inLibrary?: boolean;
+  onToggleLibrary?: (add: boolean) => void;
+}) {
+  const status = statusTone(game.prefixes ?? []);
+  const version = cleanVersion(game.version);
+  return (
+    <article className="group relative flex flex-col overflow-hidden rounded-[var(--radius-card)] border border-border bg-surface-1 transition-[transform,border-color,box-shadow] duration-200 hover:-translate-y-0.5 hover:border-border-strong hover:shadow-card">
+      <Link to="/game/$id" params={{ id: String(game.id) }} className="absolute inset-0 z-[1]" aria-label={game.title} />
+      <div className="relative">
+        <Cover src={game.cover} alt="" className="aspect-[16/9]" />
+        <div className="absolute left-2 top-2 flex flex-wrap gap-1">
+          {game.hasUpdate && <Badge tone="accent" className="bg-accent text-accent-fg">Update</Badge>}
+          {game.isNew && <Badge tone="solid">New</Badge>}
+          {status && <Badge tone="solid" className={TONE_TEXT[status.tone]}>{status.label}</Badge>}
+        </div>
+        {onToggleLibrary && (
+          <button
+            type="button"
+            onClick={() => onToggleLibrary(!inLibrary)}
+            aria-label={inLibrary ? `Remove ${game.title} from library` : `Add ${game.title} to library`}
+            title={inLibrary ? "In your library (click to remove)" : "Add to library"}
+            className={cn(
+              "absolute right-2 top-2 z-[2] grid size-8 place-items-center rounded-full border backdrop-blur-sm transition-all",
+              inLibrary
+                ? "border-accent/60 bg-accent text-accent-fg"
+                : "border-white/15 bg-black/55 text-white opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
+            )}
+          >
+            {inLibrary ? <Check className="size-4" /> : <Plus className="size-4" />}
+          </button>
+        )}
+      </div>
+      <div className="flex flex-1 flex-col gap-1 p-3">
+        <h3 className="line-clamp-2 text-[14px] font-semibold leading-snug" title={game.title}>
+          {game.title}
+        </h3>
+        {game.creator && <p className="truncate text-[12.5px] text-muted">{game.creator}</p>}
+        <div className="mt-auto flex items-center gap-1.5 pt-2 text-[12px] text-faint">
+          {version && <span className="truncate rounded bg-surface-3 px-1.5 py-0.5 font-medium text-muted">v{version}</span>}
+          {game.engine && <span className="truncate">{game.engine}</span>}
+          {game.updatedAt ? <span className="ml-auto shrink-0">{timeAgo(game.updatedAt)}</span> : null}
+        </div>
+      </div>
+    </article>
+  );
+});
+
+export function GameCardSkeleton() {
+  return (
+    <div className="overflow-hidden rounded-[var(--radius-card)] border border-border bg-surface-1">
+      <div className="skeleton aspect-[16/9]" />
+      <div className="space-y-2 p-3">
+        <div className="skeleton h-4 w-4/5 rounded" />
+        <div className="skeleton h-3 w-2/5 rounded" />
+        <div className="skeleton mt-3 h-3 w-1/3 rounded" />
+      </div>
+    </div>
+  );
+}
+
+export function GameGrid({ children, min = 220 }: { children: React.ReactNode; min?: number }) {
+  return (
+    <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${min}px, 1fr))` }}>
+      {children}
+    </div>
+  );
+}

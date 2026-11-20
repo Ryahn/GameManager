@@ -1,0 +1,92 @@
+# F95 Game Manager
+
+The official desktop launcher for the [f95api.xyz](https://f95api.xyz) catalog. It's a game library, an update tracker and (soon) a downloader in one app, built with **Tauri 2 (Rust) + React + TypeScript + Tailwind**.
+
+It brings together the best ideas from F95Checker, wLib and XLibrary:
+- an easy-to-read dark UI with a light theme
+- one primary action per game
+- the Ctrl+K command palette
+- server-side update detection, including stealth updates
+- downloads paced so users don't get banned
+
+## Quick start
+
+```bash
+npm install
+npm run tauri dev      # the real app (needs Rust + MSVC build tools + WebView2)
+npm run dev            # UI only, in a browser, with a fake backend (src/dev/mockIpc.ts)
+```
+
+Tests and checks:
+
+```bash
+npm test               # vitest
+npm run typecheck      # tsc
+cd src-tauri && cargo test && cargo clippy --all-targets
+```
+
+## How it fits together
+
+```
+React UI ──invoke()──▶ Rust commands ──▶ f95api.xyz          (catalog, bookmarks, update inbox)
+   │                        │
+   └─ gmimg:// images ──────┴──▶ F95 image hosts                (allow-listed, 2 req/s, disk cache)
+```
+
+- **The webview never holds credentials.** All network traffic goes through Rust (`src-tauri/src/api/client.rs`). There is one shared rate limiter (`src-tauri/src/limiter.rs`) set to 90 requests per minute, below the API's limit of 120. After a 429 there is a cooldown, and requests fail fast during it instead of piling up.
+- **Your library lives on the server as bookmarks.** The server checks them every 30 minutes, including stealth updates. `GET /v1/bookmarks?updated_only=true` is the Updates inbox, and "Mark seen" calls `/ack`.
+- **Download links never come from the API.** They're for approved partners only. In Phase 2 the launcher will read them from the F95 thread on the user's machine, using the user's own F95 session in a built-in browser window, with strict pacing.
+
+| Path | What it does |
+| --- | --- |
+| `src-tauri/src/config.rs` | Public build-time settings: API base, OIDC issuer and client id, rate budgets |
+| `src-tauri/src/limiter.rs` | Sliding-window limiter with priorities, jitter and the 429 circuit (unit-tested) |
+| `src-tauri/src/api/` | Typed API client and models, mapped to friendly errors |
+| `src-tauri/src/auth/` | API key or Authentik SSO (PKCE + loopback). Secrets are kept in the OS keyring |
+| `src-tauri/src/images.rs` | Cover cache behind the `gmimg://` scheme |
+| `src/app/` | Shell, sidebar, Ctrl+K palette, router, onboarding gate |
+| `src/features/*` | Home, Library, Discover, Updates, Downloads, Settings, Game page, Onboarding |
+| `src/styles/index.css` | Design tokens: every colour, both themes, and the accent presets |
+
+## Secrets: what may and may not ship
+
+The installer is public. Anyone can unpack it, so **it must contain no secrets**.
+
+- **Safe to ship** (public values in `config.rs`):
+  - the API base URL
+  - the OIDC issuer URL
+  - the OAuth **client id**
+  - the updater **public** key
+- **Never ship or commit any of these:**
+  - an OAuth client secret (the launcher is a *public* client, so it doesn't have one)
+  - `X-Worker-Token` / `/internal/*` credentials
+  - Authentik admin tokens
+  - the server's F95 cookies
+  - the updater private key
+  - the code-signing certificate
+  The last two belong only in CI secrets.
+- Each user's API key or SSO refresh token is stored in **Windows Credential Manager** (`keyring`). It never goes into files or the webview.
+
+## Turning on "Sign in with F95" (Authentik)
+
+SSO stays hidden until a client id is compiled in. To set it up:
+
+1. In Authentik at `auth.zonies.xyz`, create an **OAuth2/OpenID Provider**:
+   - Client type: **Public**. It has no secret.
+   - Redirect URIs (regex): `^http://127\.0\.0\.1:\d+/callback$`
+   - Scopes: `openid profile offline_access`
+   - Access token about 10 min. Refresh token about 30 days, with rotation turned on.
+   - Bind it to an Application named `f95gamemanager` with a policy that only lets approved users in.
+2. Have f95api.xyz accept `Authorization: Bearer <JWT>`. It should verify the token with Authentik's JWKS (`iss`, `aud = client_id`, `exp`), map `sub` to the user, and apply the same per-user limits. Downloads stay off for these tokens.
+3. Build with the public values:
+   ```bash
+   F95GM_OIDC_CLIENT_ID=<client id> F95GM_OIDC_ISSUER=https://auth.zonies.xyz/application/o/f95gamemanager/ npm run tauri build
+   ```
+
+## Roadmap
+
+- [x] **Phase 0:** shell and design system, onboarding, API key + SSO sign-in, API client and limiter, Home / Discover / Library / Updates / Game / Settings
+- [ ] **Phase 1:** local SQLite library (installed, finished and played versions, notes, labels, collections), launching and playtime, folder scan, background poller, tray and notifications
+- [ ] **Phase 2:** F95 session webview, reading links from the thread's first post (one request at a time, at least 5 s apart), download queue (2 active, 1 per host, 45 s ± 15 s between starts on a host), mass-download warnings (5+ queued, 15+ per day), extract and install, updates that keep saves
+- [ ] **Phase 3:** F95Checker import, `f95gm://` deep links, browser extension, boss key and PIN, signed auto-updater and code signing
+- [ ] **Phase 4:** macOS, Linux and Steam Deck

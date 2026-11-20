@@ -1,0 +1,168 @@
+@import "tailwindcss";
+
+/*
+ * Design tokens. Every colour in the app comes from these variables so the
+ * dark/light themes and accent presets stay consistent. Text/background pairs
+ * are chosen for >= 4.5:1 contrast.
+ */
+:root,
+[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0e1014;
+  --surface-1: #14171d;
+  --surface-2: #1a1e26;
+  --surface-3: #222732;
+  --border: #2a303c;
+  --border-strong: #3a4252;
+  --text: #e8eaf0;
+  --text-muted: #a2abbb;
+  --text-faint: #6f7889;
+  --overlay: rgb(5 6 8 / 0.72);
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 24px rgb(0 0 0 / 0.28);
+
+  --success: #3ecf8e;
+  --warning: #f5b544;
+  --danger: #f27474;
+  --info: #62b0fa;
+}
+
+[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f5f6f8;
+  --surface-1: #ffffff;
+  --surface-2: #f0f2f5;
+  --surface-3: #e6e9ee;
+  --border: #dde1e7;
+  --border-strong: #c5cbd4;
+  --text: #161a22;
+  --text-muted: #4f5866;
+  --text-faint: #7b8494;
+  --overlay: rgb(20 24 32 / 0.45);
+  --shadow: 0 1px 2px rgb(16 24 40 / 0.06), 0 8px 24px rgb(16 24 40 / 0.08);
+
+  --success: #12935a;
+  --warning: #b77806;
+  --danger: #d23f3f;
+  --info: #1f78d1;
+}
+
+/* Accent presets (set on <html data-accent="...">). */
+:root,
+[data-accent="violet"] { --accent: #8b7cf6; --accent-hover: #9d90f8; --accent-fg: #0e0b1f; }
+[data-accent="rose"]   { --accent: #f472a6; --accent-hover: #f68ab6; --accent-fg: #22070f; }
+[data-accent="teal"]   { --accent: #2dd4bf; --accent-hover: #4ee0ce; --accent-fg: #03201c; }
+[data-accent="amber"]  { --accent: #f5b544; --accent-hover: #f7c464; --accent-fg: #221502; }
+[data-accent="blue"]   { --accent: #60a5fa; --accent-hover: #7cb5fb; --accent-fg: #04142b; }
+[data-theme="light"][data-accent="violet"], [data-theme="light"]:not([data-accent]) { --accent: #6d5ce8; --accent-hover: #5e4cdc; --accent-fg: #ffffff; }
+[data-theme="light"][data-accent="rose"]  { --accent: #d6336f; --accent-hover: #c02a62; --accent-fg: #ffffff; }
+[data-theme="light"][data-accent="teal"]  { --accent: #0f8f80; --accent-hover: #0c7d70; --accent-fg: #ffffff; }
+[data-theme="light"][data-accent="amber"] { --accent: #b77806; --accent-hover: #a06805; --accent-fg: #ffffff; }
+[data-theme="light"][data-accent="blue"]  { --accent: #1f6fd1; --accent-hover: #1a61b8; --accent-fg: #ffffff; }
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface-1: var(--surface-1);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-text: var(--text);
+  --color-muted: var(--text-muted);
+  --color-faint: var(--text-faint);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-fg: var(--accent-fg);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --color-info: var(--info);
+  --color-overlay: var(--overlay);
+  --shadow-card: var(--shadow);
+  --font-sans: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  --font-display: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+  --radius-card: 14px;
+}
+
+html {
+  font-size: calc(16px * var(--ui-scale, 1));
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  overflow: hidden;
+}
+
+input,
+textarea,
+[data-selectable] {
+  user-select: text;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+/* Thin, quiet scrollbars. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+[data-reduce-motion="true"] *,
+[data-reduce-motion="true"] *::before,
+[data-reduce-motion="true"] *::after {
+  animation-duration: 0.001ms !important;
+  transition-duration: 0.001ms !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+@keyframes shimmer {
+  from { background-position: -200% 0; }
+  to { background-position: 200% 0; }
+}
+
+.skeleton {
+  background: linear-gradient(90deg, var(--surface-2) 25%, var(--surface-3) 50%, var(--surface-2) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.6s ease-in-out infinite;
+}
+
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+.animate-fade-up {
+  animation: fade-up 0.28s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.blur-nsfw img[data-cover] {
+  filter: blur(18px) saturate(0.6);
+  transition: filter 0.2s;
+}
+.blur-nsfw [data-cover-wrap]:hover img[data-cover] {
+  filter: none;
+}

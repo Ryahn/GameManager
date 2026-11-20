@@ -1,0 +1,150 @@
+//! Non-secret user settings, stored as JSON in the app data folder.
+//! (Secrets go to the OS keyring; see `auth::store`.)
+
+use std::path::PathBuf;
+
+use serde::{Deserialize, Serialize};
+use tokio::sync::Mutex;
+
+use crate::auth::AuthMode;
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct Settings {
+    pub onboarding_complete: bool,
+    pub auth_mode: Option<AuthMode>,
+    pub username: Option<String>,
+    pub library_dir: Option<String>,
+    pub theme: String,
+    pub accent: String,
+    pub ui_scale: f32,
+    pub reduce_motion: bool,
+    pub blur_nsfw: bool,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            onboarding_complete: false,
+            auth_mode: None,
+            username: None,
+            library_dir: None,
+            theme: "dark".into(),
+            accent: "violet".into(),
+            ui_scale: 1.0,
+            reduce_motion: false,
+            blur_nsfw: false,
+        }
+    }
+}
+
+/// Fields the UI may change. Auth fields are set by the auth commands only.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct SettingsPatch {
+    pub onboarding_complete: Option<bool>,
+    pub library_dir: Option<String>,
+    pub theme: Option<String>,
+    pub accent: Option<String>,
+    pub ui_scale: Option<f32>,
+    pub reduce_motion: Option<bool>,
+    pub blur_nsfw: Option<bool>,
+}
+
+impl Settings {
+    pub fn apply(&mut self, p: SettingsPatch) {
+        if let Some(v) = p.onboarding_complete {
+            self.onboarding_complete = v;
+        }
+        if let Some(v) = p.library_dir {
+            self.library_dir = Some(v).filter(|s| !s.trim().is_empty());
+        }
+        if let Some(v) = p
+            .theme
+            .filter(|t| matches!(t.as_str(), "dark" | "light" | "system"))
+        {
+            self.theme = v;
+        }
+        if let Some(v) = p.accent {
+            self.accent = v;
+        }
+        if let Some(v) = p.ui_scale {
+            self.ui_scale = v.clamp(0.8, 1.5);
+        }
+        if let Some(v) = p.reduce_motion {
+            self.reduce_motion = v;
+        }
+        if let Some(v) = p.blur_nsfw {
+            self.blur_nsfw = v;
+        }
+    }
+}
+
+pub struct SettingsStore {
+    path: PathBuf,
+    pub value: Mutex<Settings>,
+}
+
+impl SettingsStore {
+    pub fn load(dir: PathBuf) -> Self {
+        let path = dir.join("settings.json");
+        let value = std::fs::read_to_string(&path)
+            .ok()
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_default();
+        Self {
+            path,
+            value: Mutex::new(value),
+        }
+    }
+
+    pub async fn get(&self) -> Settings {
+        self.value.lock().await.clone()
+    }
+
+    pub async fn update(&self, f: impl FnOnce(&mut Settings)) -> Result<Settings, String> {
+        let mut s = self.value.lock().await;
+        f(&mut s);
+        let json = serde_json::to_string_pretty(&*s).map_err(|e| e.to_string())?;
+        if let Some(parent) = self.path.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        // Write-then-rename so a crash never leaves a half-written file.
+        let tmp = self.path.with_extension("json.tmp");
+        std::fs::write(&tmp, json).map_err(|e| e.to_string())?;
+        std::fs::rename(&tmp, &self.path).map_err(|e| e.to_string())?;
+        Ok(s.clone())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn patch_clamps_and_validates() {
+        let mut s = Settings::default();
+        s.apply(SettingsPatch {
+            ui_scale: Some(3.0),
+            theme: Some("neon".into()),
+            library_dir: Some("  ".into()),
+            ..Default::default()
+        });
+        assert_eq!(s.ui_scale, 1.5);
+        assert_eq!(s.theme, "dark");
+        assert_eq!(s.library_dir, None);
+    }
+
+    #[tokio::test]
+    async fn persists_round_trip() {
+        let dir = std::env::temp_dir().join(format!("f95gm-test-{}", std::process::id()));
+        let store = SettingsStore::load(dir.clone());
+        store
+            .update(|s| s.library_dir = Some("D:/Games".into()))
+            .await
+            .unwrap();
+        let again = SettingsStore::load(dir.clone());
+        assert_eq!(again.get().await.library_dir.as_deref(), Some("D:/Games"));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+}
