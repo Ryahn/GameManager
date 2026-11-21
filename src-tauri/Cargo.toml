@@ -1,6 +1,6 @@
 [package]
 name = "f95-game-manager"
-version = "0.1.0"
+version = "0.2.0"
 description = "Official game library, update tracker and launcher for f95api.xyz"
 authors = ["F95GameManager contributors"]
 edition = "2024"
