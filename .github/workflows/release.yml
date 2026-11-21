@@ -59,10 +59,17 @@ jobs:
         with:
           workspaces: src-tauri
 
+      # The bundler signs update files and checks them against
+      # plugins.updater.pubkey, so the public key goes into the build config
+      # here (it is public; tauri.conf.json stays key-free).
       - name: Turn on signed updates (when a public key is configured)
         if: ${{ vars.F95GM_UPDATER_PUBKEY != '' }}
         shell: bash
-        run: echo "UPDATER_ARGS=--config src-tauri/tauri.updater.conf.json" >> "$GITHUB_ENV"
+        env:
+          PUBKEY: ${{ vars.F95GM_UPDATER_PUBKEY }}
+        run: |
+          node -e 'require("fs").writeFileSync("src-tauri/tauri.updater.conf.json", JSON.stringify({ bundle: { createUpdaterArtifacts: true }, plugins: { updater: { pubkey: process.env.PUBKEY.trim() } } }, null, 2))'
+          echo "UPDATER_ARGS=--config src-tauri/tauri.updater.conf.json" >> "$GITHUB_ENV"
 
       - uses: tauri-apps/tauri-action@v0
         env:
