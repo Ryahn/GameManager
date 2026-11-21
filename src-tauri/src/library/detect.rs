@@ -442,6 +442,11 @@ mod tests {
         d
     }
 
+    /// Off Windows, a Windows .exe is labelled as one (it runs via Proton/Wine).
+    fn windows_label(s: &str) -> String {
+        if cfg!(windows) { s.to_string() } else { format!("{s} (Windows)") }
+    }
+
     fn touch(p: &Path) {
         fs::create_dir_all(p.parent().unwrap()).unwrap();
         fs::write(p, b"x").unwrap();
@@ -459,7 +464,7 @@ mod tests {
         assert_eq!(c.len(), 2);
         assert!(c[0].path.ends_with("SummerNights.exe"));
         assert_eq!(c[0].engine, Engine::RenPy);
-        assert_eq!(c[1].label, "SummerNights (32-bit)");
+        assert_eq!(c[1].label, windows_label("SummerNights (32-bit)"));
         let _ = fs::remove_dir_all(d);
     }
 
@@ -471,7 +476,7 @@ mod tests {
         fs::create_dir_all(r.join("www")).unwrap();
         let c = candidates(&r);
         assert_eq!(c[0].engine, Engine::RpgMaker);
-        assert_eq!(c[0].label, "Play");
+        assert_eq!(c[0].label, windows_label("Play"));
 
         let u = d.join("unity");
         touch(&u.join("Echoes.exe"));

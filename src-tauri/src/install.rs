@@ -313,7 +313,9 @@ mod tests {
         assert_eq!(archive_kind(Path::new("A.PART1.RAR")), Some(ArchiveKind::Rar));
         assert_eq!(archive_kind(Path::new("x.7z.001")), Some(ArchiveKind::SevenZip));
         assert!(!is_safe_relative(Path::new("../x")));
-        assert!(!is_safe_relative(Path::new("C:\\x")));
+        // An absolute path in this OS's form. (On Linux/macOS "C:\\x" is just an
+        // odd file name that stays inside the folder, so it is safe there.)
+        assert!(!is_safe_relative(Path::new(if cfg!(windows) { "C:\\x" } else { "/etc/x" })));
         assert!(is_safe_relative(Path::new("a/b.txt")));
     }
 
