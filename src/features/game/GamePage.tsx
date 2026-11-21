@@ -1,14 +1,26 @@
 import { useState } from "react";
 import { useParams, useRouter } from "@tanstack/react-router";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { ArrowLeft, Check, Download, ExternalLink, Eye, Heart, Plus, Star } from "lucide-react";
+import { ArrowLeft, Check, Download, ExternalLink, Eye, Heart, Play, Plus, Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Badge, ErrorPanel, Skeleton, Tooltip } from "@/components/ui/primitives";
+import { Badge, ErrorPanel, Select, Skeleton, Tooltip } from "@/components/ui/primitives";
 import { Cover } from "@/components/game/GameCard";
-import { useLibraryIds, useThread, useToggleLibrary } from "@/hooks/queries";
+import { BBCode } from "@/components/BBCode";
+import { useLibraryIds, useLocalGame, usePlay, useRunning, useThread, useToggleLibrary, useUpdateLocal } from "@/hooks/queries";
+import { PLAY_STATUSES, formatPlaytime, sameVersion } from "@/lib/play";
 import { cleanVersion, cn, imageSrc, statusTone, timeAgo } from "@/lib/utils";
+import { FilesPanel, HistoryPanel, NotesPanel, useLocate } from "./YourGame";
 
-type Tab = "overview" | "changelog" | "details";
+type Tab = "overview" | "changelog" | "details" | "files" | "notes" | "history";
+
+const TABS: { value: Tab; label: string }[] = [
+  { value: "overview", label: "Overview" },
+  { value: "changelog", label: "Changelog" },
+  { value: "details", label: "Details" },
+  { value: "files", label: "Files & launch" },
+  { value: "notes", label: "Notes" },
+  { value: "history", label: "Play history" },
+];
 
 export function GamePage() {
   const { id } = useParams({ strict: false }) as { id?: string };
@@ -17,7 +29,12 @@ export function GamePage() {
   const thread = useThread(threadId);
   const library = useLibraryIds();
   const toggle = useToggleLibrary();
+  const localQ = useLocalGame(threadId);
+  const update = useUpdateLocal(threadId);
+  const running = useRunning();
+  const play = usePlay();
   const [tab, setTab] = useState<Tab>("overview");
+  const locate = useLocate(threadId, () => setTab("files"));
   const [shot, setShot] = useState<string | null>(null);
 
   const back = (
@@ -51,6 +68,11 @@ export function GamePage() {
   const status = statusTone(t.prefixes);
   const version = cleanVersion(t.version);
   const hero = t.banner || t.cover;
+  const local = localQ.data;
+  const installed = (local?.targets.length ?? 0) > 0;
+  const isRunning = running.data?.has(threadId) ?? false;
+  const installedVersion = cleanVersion(local?.installed_version);
+  const behind = !!installedVersion && !!version && !sameVersion(installedVersion, version);
 
   return (
     <div className="animate-fade-up">
@@ -78,13 +100,23 @@ export function GamePage() {
             <p className="mt-1 text-muted">{t.creator || t.developer}</p>
           </div>
           <div className="flex items-center gap-2">
-            <Tooltip content="Downloads arrive in the next update" side="top">
-              <span>
-                <Button variant="primary" size="lg" disabled>
-                  <Download /> Download
-                </Button>
-              </span>
-            </Tooltip>
+            {isRunning ? (
+              <Button variant="primary" size="lg" disabled className="!opacity-100 !bg-success !text-black">
+                <span className="size-2 animate-pulse rounded-full bg-black/70" /> Playing
+              </Button>
+            ) : installed ? (
+              <Button variant="primary" size="lg" loading={play.isPending} onClick={() => play.mutate({ id: threadId, title: t.title })}>
+                <Play className="fill-current" /> Play
+              </Button>
+            ) : (
+              <Tooltip content="Downloads arrive in the next update" side="top">
+                <span>
+                  <Button variant="primary" size="lg" disabled>
+                    <Download /> Download
+                  </Button>
+                </span>
+              </Tooltip>
+            )}
             <Button
               variant={inLibrary ? "secondary" : "outline"}
               size="lg"
@@ -108,11 +140,38 @@ export function GamePage() {
           <span className="text-faint">Latest </span>
           <span className="font-semibold">{version ? `v${version}` : "Unknown"}</span>
         </span>
-        <span className="text-faint">
-          Installed <span className="text-muted">Not installed</span>
+        <span className="flex items-center gap-1.5 text-faint">
+          Installed{" "}
+          {installedVersion ? (
+            <span className={cn("font-medium", behind ? "text-warning" : "text-text")}>v{installedVersion}</span>
+          ) : installed ? (
+            <button type="button" className="text-accent hover:underline" onClick={() => setTab("files")}>
+              set version
+            </button>
+          ) : (
+            <>
+              <span className="text-muted">No</span>
+              <button type="button" className="text-accent hover:underline" onClick={locate.pickFolder}>
+                · I have it
+              </button>
+            </>
+          )}
+          {behind && <Badge tone="warning">Update available</Badge>}
         </span>
+        {local?.last_played_version && (
+          <span className="text-faint">
+            Played <span className="text-muted">v{cleanVersion(local.last_played_version)}</span>
+          </span>
+        )}
+        {!!local?.playtime_secs && <span className="text-faint">{formatPlaytime(local.playtime_secs)} played</span>}
         {t.last_promoted && <span className="text-faint">Updated {timeAgo(t.last_promoted)}</span>}
         <span className="ml-auto flex items-center gap-4 text-muted">
+          <Select
+            label="Play status"
+            value={local?.play_status ?? "not_started"}
+            onChange={(play_status) => update.mutate({ play_status })}
+            options={PLAY_STATUSES.map((s) => ({ value: s.value, label: s.label }))}
+          />
           {t.sam_rating != null && (
             <span className="flex items-center gap-1">
               <Star className="size-4 text-warning" /> {t.sam_rating.toFixed(1)}
@@ -132,18 +191,18 @@ export function GamePage() {
       </div>
 
       <div role="tablist" aria-label="Game sections" className="mt-6 flex gap-1 border-b border-border">
-        {(["overview", "changelog", "details"] as Tab[]).map((k) => (
+        {TABS.map(({ value: k, label }) => (
           <button
             key={k}
             role="tab"
             aria-selected={tab === k}
             onClick={() => setTab(k)}
             className={cn(
-              "-mb-px border-b-2 px-4 py-2.5 text-sm font-medium capitalize transition-colors",
+              "-mb-px border-b-2 px-4 py-2.5 text-sm font-medium transition-colors",
               tab === k ? "border-accent text-text" : "border-transparent text-muted hover:text-text",
             )}
           >
-            {k}
+            {label}
           </button>
         ))}
       </div>
@@ -152,9 +211,11 @@ export function GamePage() {
         {tab === "overview" && (
           <div className="grid gap-8 lg:grid-cols-[1fr_320px]">
             <div>
-              <p className="whitespace-pre-line text-[15px] leading-relaxed text-muted" data-selectable>
-                {t.overview?.trim() || "No overview yet."}
-              </p>
+              {t.overview?.trim() ? (
+                <BBCode text={t.overview.trim()} className="text-[15px] leading-relaxed text-muted" />
+              ) : (
+                <p className="text-[15px] text-muted">No overview yet.</p>
+              )}
               {t.previews.length > 0 && (
                 <div className="mt-8 grid grid-cols-2 gap-3 md:grid-cols-3">
                   {t.previews.slice(0, 9).map((p) => (
@@ -174,9 +235,11 @@ export function GamePage() {
           </div>
         )}
         {tab === "changelog" && (
-          <pre className="whitespace-pre-wrap font-sans text-[14px] leading-relaxed text-muted" data-selectable>
-            {t.changelog?.trim() || "No changelog yet."}
-          </pre>
+          t.changelog?.trim() ? (
+            <BBCode text={t.changelog.trim()} className="max-w-4xl text-[14px] leading-relaxed text-muted" />
+          ) : (
+            <p className="text-[14px] text-muted">No changelog yet.</p>
+          )
         )}
         {tab === "details" && (
           <dl className="grid max-w-2xl grid-cols-[160px_1fr] gap-x-6 gap-y-3 text-sm">
@@ -215,6 +278,9 @@ export function GamePage() {
             )}
           </dl>
         )}
+        {tab === "files" && <FilesPanel id={threadId} local={local} latest={t.version} />}
+        {tab === "notes" && <NotesPanel id={threadId} local={local} latest={t.version} />}
+        {tab === "history" && <HistoryPanel id={threadId} local={local} />}
       </div>
 
       {shot && (

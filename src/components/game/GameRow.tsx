@@ -1,8 +1,9 @@
 import { Link } from "@tanstack/react-router";
 import { ChevronRight } from "lucide-react";
 import { ErrorPanel } from "@/components/ui/primitives";
-import { useLibraryIds, useToggleLibrary } from "@/hooks/queries";
+import { useLibraryIds, useLocalMap, usePlay, useRunning, useToggleLibrary } from "@/hooks/queries";
 import { GameCard, GameCardSkeleton, GameGrid, type GameCardData } from "./GameCard";
+import { withLocal } from "./mappers";
 
 /** A titled block of game cards with loading, error and empty handling. */
 export function GameRow({
@@ -28,6 +29,9 @@ export function GameRow({
 }) {
   const library = useLibraryIds();
   const toggle = useToggleLibrary();
+  const local = useLocalMap();
+  const running = useRunning();
+  const play = usePlay();
 
   return (
     <section className="mb-10">
@@ -51,9 +55,11 @@ export function GameRow({
             : games.map((g) => (
                 <GameCard
                   key={g.id}
-                  game={g}
+                  game={withLocal(g, local.get(g.id))}
                   inLibrary={library.has(g.id)}
                   onToggleLibrary={(add) => toggle.mutate({ id: g.id, add, title: g.title })}
+                  onPlay={() => play.mutate({ id: g.id, title: g.title })}
+                  running={running.data?.has(g.id)}
                 />
               ))}
         </GameGrid>

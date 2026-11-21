@@ -30,19 +30,6 @@ pub struct ThreadSummary {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
-pub struct ThreadListResponse {
-    pub total: i64,
-    pub items: Vec<ThreadSummary>,
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
-#[serde(default)]
-pub struct ThreadBatchResponse {
-    pub items: Vec<ThreadSummary>,
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
-#[serde(default)]
 pub struct ExternalLink {
     pub role: String,
     pub host: String,

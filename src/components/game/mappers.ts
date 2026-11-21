@@ -1,4 +1,4 @@
-import type { Bookmark, Handiwork, SearchHit, ThreadSummary } from "@/lib/ipc";
+import type { Bookmark, Handiwork, LocalGame, SearchHit, ThreadSummary } from "@/lib/ipc";
 import type { GameCardData } from "./GameCard";
 
 export const fromHandiwork = (h: Handiwork): GameCardData => ({
@@ -36,3 +36,22 @@ export const fromHit = (h: SearchHit): GameCardData => ({
   creator: h.creator,
   cover: h.cover,
 });
+
+/** Adds local state (installed, play status) to a card. */
+export const withLocal = (g: GameCardData, local: LocalGame | undefined): GameCardData =>
+  local ? { ...g, installed: local.targets.length > 0, playStatus: local.play_status } : g;
+
+/** A card from the offline cache, for when the server can't be reached. */
+export const fromLocal = (l: LocalGame): GameCardData =>
+  withLocal(
+    {
+      id: l.thread_id,
+      title: l.cached?.title || `Thread ${l.thread_id}`,
+      creator: l.cached?.creator,
+      version: l.cached?.version,
+      cover: l.cached?.cover,
+      prefixes: l.cached?.prefixes,
+      updatedAt: l.cached?.last_promoted,
+    },
+    l,
+  );

@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import { Command } from "cmdk";
 import { useNavigate } from "@tanstack/react-router";
 import { Dialog as D } from "radix-ui";
-import { Compass, Download, Gamepad2, Home, Library, Loader2, Moon, RefreshCcw, Search, Settings, Sun } from "lucide-react";
-import { useSearch, useSettings, useSignedIn, useUpdateSettings } from "@/hooks/queries";
+import { Compass, Download, Gamepad2, Home, Library, Loader2, Moon, Play, RefreshCcw, Search, Settings, Sun } from "lucide-react";
+import { useLocalLibrary, usePlay, useSearch, useSettings, useSignedIn, useUpdateSettings } from "@/hooks/queries";
 import { useUi } from "@/state/ui";
 import { Kbd } from "@/components/ui/primitives";
 
@@ -32,6 +32,8 @@ export function CommandPalette() {
   const search = useSearch(signedIn ? debounced : "");
   const settings = useSettings();
   const update = useUpdateSettings();
+  const local = useLocalLibrary();
+  const play = usePlay();
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -65,6 +67,11 @@ export function CommandPalette() {
   const ql = query.trim().toLowerCase();
   const matchedPages = pages.filter((p) => !ql || p.label.toLowerCase().includes(ql));
   const showThemeAction = !ql || "switch theme dark light".includes(ql);
+  // Installed games, playable straight from here. Most recently played first.
+  const playable = (local.data ?? [])
+    .filter((g) => g.targets.length && (!ql || (g.cached?.title ?? "").toLowerCase().includes(ql)))
+    .sort((a, b) => (b.last_played_at ?? 0) - (a.last_played_at ?? 0))
+    .slice(0, ql ? 5 : 3);
 
   return (
     <D.Root open={open} onOpenChange={setOpen}>
@@ -91,6 +98,23 @@ export function CommandPalette() {
               <Command.Empty className="px-3 py-8 text-center text-sm text-faint">
                 {query.trim().length < 2 ? "Type to search the catalog." : "No matches."}
               </Command.Empty>
+
+              {playable.length > 0 && (
+                <Command.Group heading="Play" className={groupCls}>
+                  {playable.map((g) => (
+                    <Command.Item
+                      key={g.thread_id}
+                      value={`play-${g.thread_id}`}
+                      onSelect={() => go(() => play.mutate({ id: g.thread_id, title: g.cached?.title }))}
+                      className={itemCls}
+                    >
+                      <Play />
+                      <span className="flex-1 truncate text-text">{g.cached?.title ?? `Thread ${g.thread_id}`}</span>
+                      <span className="text-xs text-faint">Play</span>
+                    </Command.Item>
+                  ))}
+                </Command.Group>
+              )}
 
               {!!search.data?.hits.length && (
                 <Command.Group heading="Games" className={groupCls}>

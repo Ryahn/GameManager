@@ -3,7 +3,7 @@ import { Search, UserRound } from "lucide-react";
 import { Sidebar } from "./Sidebar";
 import { CommandPalette } from "./CommandPalette";
 import { Kbd } from "@/components/ui/primitives";
-import { useAuth } from "@/hooks/queries";
+import { useAuth, useBackendEvents } from "@/hooks/queries";
 import { useUi } from "@/state/ui";
 
 function Topbar() {
@@ -41,6 +41,7 @@ function Topbar() {
 }
 
 export function AppShell() {
+  useBackendEvents();
   return (
     <div className="flex h-full">
       <Sidebar />

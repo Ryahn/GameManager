@@ -3,7 +3,7 @@ import { forwardRef, type HTMLAttributes, type InputHTMLAttributes } from "react
 import { cva, type VariantProps } from "class-variance-authority";
 import { AlertTriangle, RefreshCw, type LucideIcon } from "lucide-react";
 import { Dialog as D, Tooltip as T } from "radix-ui";
-import { X } from "lucide-react";
+import { ChevronDown, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { friendlyError } from "@/lib/errors";
 import { Button } from "./button";
@@ -276,5 +276,40 @@ export function Switch({ checked, onChange, label }: { checked: boolean; onChang
         )}
       />
     </button>
+  );
+}
+
+// ------------------------------------------------------------------ Select
+
+/** Native select, styled. Native keeps keyboard and screen-reader behaviour free. */
+export function Select<T extends string>({
+  value,
+  onChange,
+  options,
+  label,
+  className,
+}: {
+  value: T;
+  onChange: (v: T) => void;
+  options: { value: T; label: string }[];
+  label: string;
+  className?: string;
+}) {
+  return (
+    <div className={cn("relative inline-flex", className)}>
+      <select
+        aria-label={label}
+        value={value}
+        onChange={(e) => onChange(e.target.value as T)}
+        className="h-8 w-full appearance-none rounded-lg border border-border bg-surface-1 pl-3 pr-8 text-[13px] font-medium text-text transition-colors hover:border-border-strong focus:border-accent focus:outline-none"
+      >
+        {options.map((o) => (
+          <option key={o.value} value={o.value} className="bg-surface-1">
+            {o.label}
+          </option>
+        ))}
+      </select>
+      <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 size-3.5 -translate-y-1/2 text-faint" />
+    </div>
   );
 }

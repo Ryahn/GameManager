@@ -1,7 +1,7 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import { Compass, Download, Home, Library, PanelLeftClose, PanelLeftOpen, RefreshCcw, Settings, type LucideIcon } from "lucide-react";
 import { Tooltip } from "@/components/ui/primitives";
-import { useAuth, useBookmarks } from "@/hooks/queries";
+import { useAuth, useUpdateInbox } from "@/hooks/queries";
 import { useUi } from "@/state/ui";
 import { cn } from "@/lib/utils";
 
@@ -34,8 +34,7 @@ export function Sidebar() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const auth = useAuth();
   const signedIn = auth.data?.signed_in ?? false;
-  const updates = useBookmarks(true, signedIn);
-  const updateCount = updates.data?.total ?? 0;
+  const updateCount = useUpdateInbox(signedIn).items.length;
 
   const items: NavItem[] = [
     { to: "/", label: "Home", icon: Home },

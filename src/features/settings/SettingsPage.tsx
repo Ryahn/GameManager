@@ -136,6 +136,15 @@ export function SettingsPage() {
           </Row>
         </Section>
 
+        <Section title="Behaviour">
+          <Row label="Keep running in the tray" hint="Closing the window keeps update checks and playtime tracking going. Quit from the tray icon.">
+            <Switch label="Keep running in the tray" checked={s.close_to_tray} onChange={(close_to_tray) => set({ close_to_tray })} />
+          </Row>
+          <Row label="Update notifications" hint="A Windows notification when games in your library get a new version. Checked every 30 minutes.">
+            <Switch label="Update notifications" checked={s.notify_updates} onChange={(notify_updates) => set({ notify_updates })} />
+          </Row>
+        </Section>
+
         <Section title="Privacy">
           <Row label="Blur covers" hint="Covers stay blurred until you hover them. Handy on a shared screen.">
             <Switch label="Blur covers" checked={s.blur_nsfw} onChange={(blur_nsfw) => set({ blur_nsfw })} />

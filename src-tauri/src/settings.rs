@@ -20,6 +20,11 @@ pub struct Settings {
     pub ui_scale: f32,
     pub reduce_motion: bool,
     pub blur_nsfw: bool,
+    /// Closing the window keeps the app in the tray so update checks continue.
+    pub close_to_tray: bool,
+    pub notify_updates: bool,
+    /// Set once the "still running in the tray" notice has been shown.
+    pub tray_notice_shown: bool,
 }
 
 impl Default for Settings {
@@ -34,6 +39,9 @@ impl Default for Settings {
             ui_scale: 1.0,
             reduce_motion: false,
             blur_nsfw: false,
+            close_to_tray: true,
+            notify_updates: true,
+            tray_notice_shown: false,
         }
     }
 }
@@ -49,6 +57,8 @@ pub struct SettingsPatch {
     pub ui_scale: Option<f32>,
     pub reduce_motion: Option<bool>,
     pub blur_nsfw: Option<bool>,
+    pub close_to_tray: Option<bool>,
+    pub notify_updates: Option<bool>,
 }
 
 impl Settings {
@@ -76,6 +86,12 @@ impl Settings {
         }
         if let Some(v) = p.blur_nsfw {
             self.blur_nsfw = v;
+        }
+        if let Some(v) = p.close_to_tray {
+            self.close_to_tray = v;
+        }
+        if let Some(v) = p.notify_updates {
+            self.notify_updates = v;
         }
     }
 }

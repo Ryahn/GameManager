@@ -114,13 +114,6 @@ impl RateLimiter {
         self.cfg.min_gap + Duration::from_millis(j)
     }
 
-    /// Remaining cooldown, if any.
-    pub async fn cooldown_remaining(&self) -> Option<Duration> {
-        let s = self.state.lock().await;
-        let now = Instant::now();
-        s.cooldown_until.filter(|u| *u > now).map(|u| u - now)
-    }
-
     /// Wait for a permit. Fails fast while a 429 cooldown is active.
     pub async fn acquire(&self, priority: Priority) -> Result<(), LimitError> {
         loop {

@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
-export type LibraryView = "grid" | "list";
+export type LibraryView = "grid" | "list" | "board";
 
 interface UiState {
   sidebarCollapsed: boolean;

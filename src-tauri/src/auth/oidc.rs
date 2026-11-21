@@ -30,8 +30,6 @@ pub struct Tokens {
     #[serde(default)]
     pub refresh_token: Option<String>,
     #[serde(default)]
-    pub expires_in: Option<u64>,
-    #[serde(default)]
     pub id_token: Option<String>,
 }
 
@@ -266,8 +264,8 @@ pub async fn refresh(
 }
 
 pub async fn revoke(http: &reqwest::Client, issuer: &str, client_id: &str, token: &str) {
-    if let Ok(disc) = discover(http, issuer).await {
-        if let Some(ep) = disc.revocation_endpoint {
+    if let Ok(disc) = discover(http, issuer).await
+        && let Some(ep) = disc.revocation_endpoint {
             let _ = http
                 .post(ep)
                 .form(&[
@@ -278,7 +276,6 @@ pub async fn revoke(http: &reqwest::Client, issuer: &str, client_id: &str, token
                 .send()
                 .await;
         }
-    }
 }
 
 /// Reads a display name from the ID token payload. Display only: the API

@@ -44,6 +44,9 @@ pub struct ApiClient {
     limiter: Arc<RateLimiter>,
     cred: RwLock<Option<Credential>>,
     refresher: RwLock<Option<RefreshFn>>,
+    /// Serialises token refreshes: with rotation, two parallel refreshes
+    /// would spend the same refresh token twice.
+    refresh_lock: tokio::sync::Mutex<()>,
 }
 
 impl ApiClient {
@@ -70,6 +73,7 @@ impl ApiClient {
             limiter,
             cred: RwLock::new(None),
             refresher: RwLock::new(None),
+            refresh_lock: tokio::sync::Mutex::new(()),
         }
     }
 
@@ -83,6 +87,20 @@ impl ApiClient {
 
     pub async fn set_refresher(&self, f: Option<RefreshFn>) {
         *self.refresher.write().await = f;
+    }
+
+    /// Swaps `stale` for a fresh Bearer token. If another request already
+    /// refreshed while this one waited, its token is reused.
+    async fn refresh(&self, stale: &Credential) -> Option<Credential> {
+        let _guard = self.refresh_lock.lock().await;
+        let current = self.cred.read().await.clone();
+        if let Some(c) = current.filter(|c| c != stale) {
+            return Some(c);
+        }
+        let refresher = self.refresher.read().await.clone()?;
+        let fresh = Credential::Bearer(refresher().await?);
+        *self.cred.write().await = Some(fresh.clone());
+        Some(fresh)
     }
 
     fn apply(rb: reqwest::RequestBuilder, cred: &Credential) -> reqwest::RequestBuilder {
@@ -157,18 +175,12 @@ impl ApiClient {
             .await?;
 
         // One transparent refresh for expired SSO access tokens.
-        if status == StatusCode::UNAUTHORIZED && matches!(cred, Credential::Bearer(_)) {
-            let refresher = self.refresher.read().await.clone();
-            if let Some(refresh) = refresher {
-                if let Some(token) = refresh().await {
-                    let fresh = Credential::Bearer(token);
-                    *self.cred.write().await = Some(fresh.clone());
-                    (status, text) = self
-                        .send_once(&method, path, query, body.as_ref(), &fresh, priority)
-                        .await?;
-                }
+        if status == StatusCode::UNAUTHORIZED && matches!(cred, Credential::Bearer(_))
+            && let Some(fresh) = self.refresh(&cred).await {
+                (status, text) = self
+                    .send_once(&method, path, query, body.as_ref(), &fresh, priority)
+                    .await?;
             }
-        }
 
         match status {
             s if s.is_success() => Ok(text),
@@ -203,6 +215,18 @@ impl ApiClient {
             .await
             .clone()
             .ok_or(ApiError::NotSignedIn)?;
+        // A restored SSO session starts without an access token; get one on
+        // first use instead of blocking app start-up on the network.
+        let cred = match cred {
+            Credential::Bearer(t) if t.is_empty() => {
+                self.refresh(&Credential::Bearer(t))
+                    .await
+                    .ok_or_else(|| ApiError::Unauthorized {
+                        message: "Couldn't renew your sign-in. Check your connection, or sign out and sign in again.".into(),
+                    })?
+            }
+            c => c,
+        };
         let text = self
             .request_with(method, path, query, body, cred, priority)
             .await?;
@@ -239,6 +263,15 @@ impl ApiClient {
     }
 
     pub async fn search(&self, q: &str, limit: u32) -> Result<SearchResponse, ApiError> {
+        self.search_with(q, limit, Priority::Foreground).await
+    }
+
+    pub async fn search_with(
+        &self,
+        q: &str,
+        limit: u32,
+        p: Priority,
+    ) -> Result<SearchResponse, ApiError> {
         self.request(
             Method::GET,
             "/v1/search",
@@ -247,7 +280,7 @@ impl ApiClient {
                 ("limit", limit.clamp(1, 50).to_string()),
             ],
             None,
-            Priority::Foreground,
+            p,
         )
         .await
     }
@@ -255,33 +288,6 @@ impl ApiClient {
     pub async fn thread(&self, id: i64, p: Priority) -> Result<ThreadDetail, ApiError> {
         self.request(Method::GET, &format!("/v1/threads/{id}"), &[], None, p)
             .await
-    }
-
-    /// Batch lookup; splits into the API's 25-id pages.
-    pub async fn threads_batch(
-        &self,
-        ids: &[i64],
-        p: Priority,
-    ) -> Result<Vec<ThreadSummary>, ApiError> {
-        let mut out = Vec::with_capacity(ids.len());
-        for chunk in ids.chunks(25) {
-            let joined = chunk
-                .iter()
-                .map(i64::to_string)
-                .collect::<Vec<_>>()
-                .join(",");
-            let r: ThreadBatchResponse = self
-                .request(
-                    Method::GET,
-                    "/v1/threads/batch",
-                    &[("ids", joined)],
-                    None,
-                    p,
-                )
-                .await?;
-            out.extend(r.items);
-        }
-        Ok(out)
     }
 
     // ----------------------------------------------------------- bookmarks
@@ -489,19 +495,32 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn batch_splits_into_25s() {
+    async fn empty_bearer_refreshes_before_first_request() {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
-            .and(path("/v1/threads/batch"))
+            .and(path("/v1/threads/7"))
+            .and(header("authorization", "Bearer fresh"))
             .respond_with(
-                ResponseTemplate::new(200).set_body_json(json!({"items": [{"thread_id": 1}]})),
+                ResponseTemplate::new(200).set_body_json(json!({"thread_id": 7, "title": "T"})),
             )
-            .expect(3)
+            .expect(2)
             .mount(&server)
             .await;
-        let c = client(&server).await;
-        let ids: Vec<i64> = (1..=60).collect();
-        let out = c.threads_batch(&ids, Priority::Background).await.unwrap();
-        assert_eq!(out.len(), 3);
+        let calls = Arc::new(std::sync::atomic::AtomicU32::new(0));
+        let c = ApiClient::new(&server.uri());
+        c.set_credential(Some(Credential::Bearer(String::new())))
+            .await;
+        let counter = calls.clone();
+        c.set_refresher(Some(Arc::new(move || {
+            counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Box::pin(async { Some("fresh".to_string()) })
+        })))
+        .await;
+        let (a, b) = tokio::join!(
+            c.thread(7, Priority::Foreground),
+            c.thread(7, Priority::Foreground)
+        );
+        assert!(a.is_ok() && b.is_ok());
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1, "refreshed once");
     }
 }

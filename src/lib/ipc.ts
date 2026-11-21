@@ -28,10 +28,23 @@ export interface Settings {
   ui_scale: number;
   reduce_motion: boolean;
   blur_nsfw: boolean;
+  close_to_tray: boolean;
+  notify_updates: boolean;
 }
 
 export type SettingsPatch = Partial<
-  Pick<Settings, "onboarding_complete" | "library_dir" | "theme" | "accent" | "ui_scale" | "reduce_motion" | "blur_nsfw">
+  Pick<
+    Settings,
+    | "onboarding_complete"
+    | "library_dir"
+    | "theme"
+    | "accent"
+    | "ui_scale"
+    | "reduce_motion"
+    | "blur_nsfw"
+    | "close_to_tray"
+    | "notify_updates"
+  >
 >;
 
 export interface ThreadSummary {
@@ -118,6 +131,110 @@ export interface LatestQuery {
   excluded_tags?: string[];
 }
 
+// ------------------------------------------------------------ local library
+
+export type PlayStatus = "not_started" | "playing" | "on_hold" | "finished" | "dropped";
+export type Engine = "ren_py" | "rpg_maker" | "unity" | "unreal" | "godot" | "html" | "other";
+
+export interface LaunchTarget {
+  id: number;
+  path: string;
+  label: string;
+  args: string;
+  is_default: boolean;
+}
+
+export interface LocalGame {
+  thread_id: number;
+  in_library: boolean;
+  play_status: PlayStatus;
+  rating: number | null;
+  notes: string;
+  labels: string[];
+  installed_version: string | null;
+  finished_version: string | null;
+  last_played_version: string | null;
+  skipped_version: string | null;
+  install_dir: string | null;
+  added_at: number;
+  last_played_at: number | null;
+  playtime_secs: number;
+  targets: LaunchTarget[];
+  cached: {
+    title: string;
+    creator: string;
+    version: string;
+    cover: string | null;
+    url: string;
+    prefixes: string[];
+    last_promoted: number | null;
+  } | null;
+}
+
+export interface LocalPatch {
+  play_status?: PlayStatus;
+  /** 0 clears. */
+  rating?: number;
+  notes?: string;
+  labels?: string[];
+  /** Empty string clears. */
+  installed_version?: string;
+  finished_version?: string;
+  skipped_version?: string;
+  install_dir?: string;
+}
+
+export interface PlaySession {
+  started_at: number;
+  secs: number;
+  version: string | null;
+}
+
+export interface Candidate {
+  path: string;
+  label: string;
+  engine: Engine;
+}
+
+export interface MatchSuggestion {
+  thread_id: number;
+  title: string;
+  creator: string;
+  cover: string | null;
+  confidence: number;
+  confident: boolean;
+}
+
+export interface ScanFolder {
+  path: string;
+  folder_name: string;
+  title_guess: string;
+  version_guess: string | null;
+  engine: Engine;
+  targets: Candidate[];
+  linked_thread_id: number | null;
+  suggestion: MatchSuggestion | null;
+}
+
+export interface ScanProgress {
+  phase: "finding" | "matching" | "done";
+  done: number;
+  total: number;
+}
+
+export interface ImportItem {
+  thread_id: number;
+  path: string;
+  version: string | null;
+}
+
+/** Events pushed from Rust. */
+export interface Events {
+  "game-running": { thread_id: number; running: boolean; secs: number | null };
+  "updates-changed": { count: number };
+  "scan-progress": ScanProgress;
+}
+
 export type ApiError =
   | { kind: "not_signed_in" }
   | { kind: "unauthorized"; message: string }
@@ -143,10 +260,30 @@ export const api = {
   search: (q: string, limit = 20) => invoke<{ query: string; hits: SearchHit[] }>("catalog_search", { q, limit }),
   thread: (id: number) => invoke<ThreadDetail>("catalog_thread", { id }),
 
+  library: () => invoke<{ total: number; items: Bookmark[] }>("bookmarks_all"),
   bookmarks: (updatedOnly = false, limit = 200, offset = 0) =>
     invoke<{ total: number; items: Bookmark[] }>("bookmarks_list", { updatedOnly, limit, offset }),
   addBookmark: (id: number) => invoke<Bookmark>("bookmarks_add", { id }),
   removeBookmark: (id: number) => invoke<void>("bookmarks_remove", { id }),
   ack: (id: number) => invoke<Bookmark>("bookmarks_ack", { id }),
   ackAll: () => invoke<{ acknowledged: number }>("bookmarks_ack_all"),
+
+  localLibrary: () => invoke<LocalGame[]>("library_local"),
+  localGame: (id: number) => invoke<LocalGame | null>("game_local", { id }),
+  sessions: (id: number) => invoke<PlaySession[]>("game_sessions", { id }),
+  updateLocal: (id: number, patch: LocalPatch) => invoke<LocalGame>("game_update", { id, patch }),
+  addTarget: (id: number, path: string) => invoke<LocalGame>("target_add", { id, path }),
+  removeTarget: (targetId: number) => invoke<LocalGame | null>("target_remove", { targetId }),
+  setDefaultTarget: (targetId: number) => invoke<LocalGame | null>("target_set_default", { targetId }),
+  detectFolder: (dir: string) => invoke<Candidate[]>("folder_detect", { dir }),
+  linkFolder: (id: number, dir: string, version?: string | null) =>
+    invoke<LocalGame>("game_link_folder", { id, dir, version: version ?? null }),
+  play: (id: number, targetId?: number) => invoke<void>("game_play", { id, targetId: targetId ?? null }),
+  running: () => invoke<number[]>("games_running"),
+  openFolder: (id: number) => invoke<void>("game_open_folder", { id }),
+  scan: (dir: string) => invoke<ScanFolder[]>("library_scan", { dir }),
+  cancelScan: () => invoke<void>("library_scan_cancel"),
+  importScan: (items: ImportItem[]) =>
+    invoke<{ linked: number; added_to_library: number; failed: string[] }>("library_import", { items }),
+  syncNow: () => invoke<void>("sync_now"),
 };

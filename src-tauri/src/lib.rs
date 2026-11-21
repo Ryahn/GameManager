@@ -2,14 +2,21 @@ mod api;
 mod auth;
 mod commands;
 mod config;
+mod db;
 mod images;
+mod launch;
+mod library;
 mod limiter;
+mod local_commands;
+mod notify;
 mod settings;
+mod sync;
+mod tray;
 
 use std::sync::Arc;
 use std::time::Duration;
 
-use tauri::Manager;
+use tauri::{Manager, WindowEvent};
 
 use api::client::ApiClient;
 use commands::AppState;
@@ -21,14 +28,12 @@ pub fn run() {
     tauri::Builder::default()
         // Must be first: a second launch focuses the existing window.
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            if let Some(w) = app.get_webview_window("main") {
-                let _ = w.unminimize();
-                let _ = w.set_focus();
-            }
+            tray::show_main(app);
         }))
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         .register_asynchronous_uri_scheme_protocol("gmimg", |ctx, request, responder| {
             let cache = ctx.app_handle().state::<Arc<ImageCache>>().inner().clone();
             let path = request.uri().path().to_string();
@@ -45,19 +50,55 @@ pub fn run() {
                 .timeout(Duration::from_secs(30))
                 .build()?;
             let api = Arc::new(ApiClient::new(config::API_BASE));
-            let settings = Arc::new(SettingsStore::load(data_dir));
+            let settings = Arc::new(SettingsStore::load(data_dir.clone()));
+            let db = Arc::new(db::Db::open(&data_dir)?);
 
             // Restore the previous session before the UI asks for auth status.
+            // This only reads the keyring; no network.
             let mode = tauri::async_runtime::block_on(settings.get()).auth_mode;
             tauri::async_runtime::block_on(auth::restore(&api, &http, mode));
 
             app.manage(ImageCache::new(cache_dir.join("images")));
+            app.manage(db);
+            app.manage(Arc::new(launch::Launcher::default()));
+            app.manage(Arc::new(sync::UpdateChecker::default()));
+            app.manage(Arc::new(local_commands::ScanState::default()));
             app.manage(AppState {
                 api,
                 http,
                 settings,
             });
+
+            tray::init(app.handle())?;
+            sync::start(app.handle().clone());
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            // Closing the window keeps the launcher in the tray (if enabled)
+            // so update checks and playtime tracking keep running.
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                if window.label() != "main" {
+                    return;
+                }
+                let app = window.app_handle();
+                let state = app.state::<AppState>();
+                let s = tauri::async_runtime::block_on(state.settings.get());
+                if !s.close_to_tray {
+                    return;
+                }
+                api.prevent_close();
+                let _ = window.hide();
+                if !s.tray_notice_shown {
+                    notify::send(
+                        app,
+                        "Still running in the tray",
+                        "F95 Game Manager keeps checking for updates. Right-click the tray icon to quit.",
+                    );
+                    let _ = tauri::async_runtime::block_on(
+                        state.settings.update(|s| s.tray_notice_shown = true),
+                    );
+                }
+            }
         })
         .invoke_handler(tauri::generate_handler![
             commands::app_info,
@@ -71,10 +112,27 @@ pub fn run() {
             commands::catalog_search,
             commands::catalog_thread,
             commands::bookmarks_list,
+            commands::bookmarks_all,
             commands::bookmarks_add,
             commands::bookmarks_remove,
             commands::bookmarks_ack,
             commands::bookmarks_ack_all,
+            local_commands::library_local,
+            local_commands::game_local,
+            local_commands::game_sessions,
+            local_commands::game_update,
+            local_commands::target_add,
+            local_commands::target_remove,
+            local_commands::target_set_default,
+            local_commands::folder_detect,
+            local_commands::game_link_folder,
+            local_commands::game_play,
+            local_commands::games_running,
+            local_commands::game_open_folder,
+            local_commands::library_scan,
+            local_commands::library_scan_cancel,
+            local_commands::library_import,
+            local_commands::sync_now,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

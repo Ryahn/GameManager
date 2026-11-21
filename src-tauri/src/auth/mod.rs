@@ -56,16 +56,13 @@ pub async fn restore(api: &ApiClient, http: &reqwest::Client, mode: Option<AuthM
             }
             None => false,
         },
-        Some(AuthMode::Sso) if sso_configured() => {
-            let refresher = sso_refresher(http.clone());
-            match refresher().await {
-                Some(at) => {
-                    api.set_credential(Some(Credential::Bearer(at))).await;
-                    api.set_refresher(Some(refresher)).await;
-                    true
-                }
-                None => false,
-            }
+        // No network here: the first API call fetches an access token, so
+        // start-up stays instant (and works offline with the local library).
+        Some(AuthMode::Sso) if sso_configured() && store::get(store::REFRESH_TOKEN).is_some() => {
+            api.set_credential(Some(Credential::Bearer(String::new())))
+                .await;
+            api.set_refresher(Some(sso_refresher(http.clone()))).await;
+            true
         }
         _ => false,
     }

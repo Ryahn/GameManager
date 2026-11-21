@@ -35,6 +35,8 @@ React UI ──invoke()──▶ Rust commands ──▶ f95api.xyz          (ca
 
 - **The webview never holds credentials.** All network traffic goes through Rust (`src-tauri/src/api/client.rs`). There is one shared rate limiter (`src-tauri/src/limiter.rs`) set to 90 requests per minute, below the API's limit of 120. After a 429 there is a cooldown, and requests fail fast during it instead of piling up.
 - **Your library lives on the server as bookmarks.** The server checks them every 30 minutes, including stealth updates. `GET /v1/bookmarks?updated_only=true` is the Updates inbox, and "Mark seen" calls `/ack`.
+- **Your copy of each game lives in a local SQLite database** (`library.db` in the app data folder). It stores the install folder, launch targets, playtime, notes, labels, rating and play status, plus a cached copy of the catalog fields so the library opens offline. The database is copied aside before any schema migration, and the last three copies are kept.
+- **Background update checks** read the small `updated_only` inbox every 30 minutes in the limiter's background lane. That's about two requests an hour, and each new version triggers one Windows notification.
 - **Download links never come from the API.** They're for approved partners only. In Phase 2 the launcher will read them from the F95 thread on the user's machine, using the user's own F95 session in a built-in browser window, with strict pacing.
 
 | Path | What it does |
@@ -44,6 +46,10 @@ React UI ──invoke()──▶ Rust commands ──▶ f95api.xyz          (ca
 | `src-tauri/src/api/` | Typed API client and models, mapped to friendly errors |
 | `src-tauri/src/auth/` | API key or Authentik SSO (PKCE + loopback). Secrets are kept in the OS keyring |
 | `src-tauri/src/images.rs` | Cover cache behind the `gmimg://` scheme |
+| `src-tauri/src/db/` | Local library database and migrations |
+| `src-tauri/src/library/` | Finds the executable in a game folder, parses folder names, scans for installed games and matches them to the catalog |
+| `src-tauri/src/launch.rs` | Starts games and tracks playtime across the game folder's processes |
+| `src-tauri/src/sync.rs`, `tray.rs`, `notify.rs` | 30-minute update check, tray menu (recently played, check now, quit), notifications |
 | `src/app/` | Shell, sidebar, Ctrl+K palette, router, onboarding gate |
 | `src/features/*` | Home, Library, Discover, Updates, Downloads, Settings, Game page, Onboarding |
 | `src/styles/index.css` | Design tokens: every colour, both themes, and the accent presets |
@@ -86,7 +92,7 @@ SSO stays hidden until a client id is compiled in. To set it up:
 ## Roadmap
 
 - [x] **Phase 0:** shell and design system, onboarding, API key + SSO sign-in, API client and limiter, Home / Discover / Library / Updates / Game / Settings
-- [ ] **Phase 1:** local SQLite library (installed, finished and played versions, notes, labels, collections), launching and playtime, folder scan, background poller, tray and notifications
+- [x] **Phase 1:** local SQLite library (installed, finished and played versions, notes, labels, rating, play status), launching and playtime, folder scan with catalog matching, board view, skip-a-version, background update checks, tray and notifications, offline library
 - [ ] **Phase 2:** F95 session webview, reading links from the thread's first post (one request at a time, at least 5 s apart), download queue (2 active, 1 per host, 45 s ± 15 s between starts on a host), mass-download warnings (5+ queued, 15+ per day), extract and install, updates that keep saves
-- [ ] **Phase 3:** F95Checker import, `f95gm://` deep links, browser extension, boss key and PIN, signed auto-updater and code signing
+- [ ] **Phase 3:** start with Windows, F95Checker import, `f95gm://` deep links, browser extension, boss key and PIN, signed auto-updater and code signing
 - [ ] **Phase 4:** macOS, Linux and Steam Deck

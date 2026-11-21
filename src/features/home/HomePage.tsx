@@ -1,6 +1,7 @@
+import { useMemo } from "react";
 import { GameRow } from "@/components/game/GameRow";
-import { fromBookmark, fromHandiwork } from "@/components/game/mappers";
-import { useBookmarks, useLatest, useSettings } from "@/hooks/queries";
+import { fromBookmark, fromHandiwork, fromLocal } from "@/components/game/mappers";
+import { useLatest, useLocalLibrary, useSettings, useUpdateInbox } from "@/hooks/queries";
 
 function greeting() {
   const h = new Date().getHours();
@@ -12,11 +13,22 @@ function greeting() {
 
 export function HomePage() {
   const settings = useSettings();
-  const updates = useBookmarks(true);
+  const inbox = useUpdateInbox();
+  const local = useLocalLibrary();
   const latest = useLatest({ order: "date", limit: 18 });
   const topRated = useLatest({ order: "rating", date: 30, limit: 12 });
   const name = settings.data?.username;
-  const updateGames = updates.data?.items.slice(0, 6).map(fromBookmark);
+  const updateGames = inbox.query.data ? inbox.items.slice(0, 6).map(fromBookmark) : undefined;
+  const updateCount = inbox.items.length;
+  const continuePlaying = useMemo(
+    () =>
+      (local.data ?? [])
+        .filter((g) => g.last_played_at && g.targets.length && g.play_status !== "finished" && g.play_status !== "dropped")
+        .sort((a, b) => (b.last_played_at ?? 0) - (a.last_played_at ?? 0))
+        .slice(0, 6)
+        .map(fromLocal),
+    [local.data],
+  );
 
   return (
     <div className="animate-fade-up">
@@ -26,11 +38,13 @@ export function HomePage() {
           {name ? `, ${name}` : ""}
         </h1>
         <p className="mt-1 text-sm text-muted">
-          {updates.data?.total
-            ? `${updates.data.total} game${updates.data.total === 1 ? "" : "s"} in your library ${updates.data.total === 1 ? "has" : "have"} an update.`
+          {updateCount
+            ? `${updateCount} game${updateCount === 1 ? "" : "s"} in your library ${updateCount === 1 ? "has" : "have"} an update.`
             : "Here's what's new in the catalog."}
         </p>
       </header>
+
+      {continuePlaying.length > 0 && <GameRow title="Continue playing" games={continuePlaying} seeAllTo="/library" />}
 
       {!!updateGames?.length && <GameRow title="Updates for you" games={updateGames} seeAllTo="/updates" />}
 

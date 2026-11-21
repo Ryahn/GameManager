@@ -1,8 +1,10 @@
 import { memo, useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { Check, ImageOff, Plus } from "lucide-react";
+import { Check, ImageOff, Play, Plus } from "lucide-react";
 import { Badge } from "@/components/ui/primitives";
 import { cn, cleanVersion, imageSrc, statusTone, timeAgo } from "@/lib/utils";
+import type { PlayStatus } from "@/lib/ipc";
+import { statusMeta } from "@/lib/play";
 
 export interface GameCardData {
   id: number;
@@ -16,6 +18,9 @@ export interface GameCardData {
   isNew?: boolean;
   hasUpdate?: boolean;
   rating?: number | null;
+  /** Local state, when known. */
+  installed?: boolean;
+  playStatus?: PlayStatus;
 }
 
 const TONE_TEXT = { success: "text-success", warning: "text-warning", danger: "text-danger", info: "text-info" } as const;
@@ -50,12 +55,17 @@ export const GameCard = memo(function GameCard({
   game,
   inLibrary,
   onToggleLibrary,
+  onPlay,
+  running,
 }: {
   game: GameCardData;
   inLibrary?: boolean;
   onToggleLibrary?: (add: boolean) => void;
+  onPlay?: () => void;
+  running?: boolean;
 }) {
   const status = statusTone(game.prefixes ?? []);
+  const play = game.playStatus && game.playStatus !== "not_started" ? statusMeta(game.playStatus) : null;
   const version = cleanVersion(game.version);
   return (
     <article className="group relative flex flex-col overflow-hidden rounded-[var(--radius-card)] border border-border bg-surface-1 transition-[transform,border-color,box-shadow] duration-200 hover:-translate-y-0.5 hover:border-border-strong hover:shadow-card">
@@ -83,12 +93,36 @@ export const GameCard = memo(function GameCard({
             {inLibrary ? <Check className="size-4" /> : <Plus className="size-4" />}
           </button>
         )}
+        {running ? (
+          <span className="absolute bottom-2 right-2 z-[2] inline-flex h-8 items-center gap-1.5 rounded-full bg-success px-3 text-[12px] font-semibold text-black shadow-card">
+            <span className="size-1.5 animate-pulse rounded-full bg-black/70" /> Playing
+          </span>
+        ) : (
+          game.installed &&
+          onPlay && (
+            <button
+              type="button"
+              onClick={onPlay}
+              aria-label={`Play ${game.title}`}
+              title="Play"
+              className="absolute bottom-2 right-2 z-[2] grid size-10 place-items-center rounded-full bg-accent text-accent-fg opacity-0 shadow-card transition-all hover:scale-105 hover:bg-accent-hover group-hover:opacity-100 focus-visible:opacity-100"
+            >
+              <Play className="size-4 fill-current" />
+            </button>
+          )
+        )}
       </div>
       <div className="flex flex-1 flex-col gap-1 p-3">
         <h3 className="line-clamp-2 text-[14px] font-semibold leading-snug" title={game.title}>
           {game.title}
         </h3>
         {game.creator && <p className="truncate text-[12.5px] text-muted">{game.creator}</p>}
+        {play && (
+          <p className="flex items-center gap-1.5 text-[12px] text-muted">
+            <span className={cn("size-1.5 rounded-full", play.dot)} aria-hidden />
+            {play.label}
+          </p>
+        )}
         <div className="mt-auto flex items-center gap-1.5 pt-2 text-[12px] text-faint">
           {version && <span className="truncate rounded bg-surface-3 px-1.5 py-0.5 font-medium text-muted">v{version}</span>}
           {game.engine && <span className="truncate">{game.engine}</span>}

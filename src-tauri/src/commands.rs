@@ -12,6 +12,7 @@ use crate::api::error::ApiError;
 use crate::api::types::*;
 use crate::auth::{self, AuthMode, AuthStatus, oidc, store};
 use crate::config;
+use crate::db::Db;
 use crate::limiter::Priority;
 use crate::settings::{Settings, SettingsPatch, SettingsStore};
 
@@ -220,14 +221,62 @@ pub async fn bookmarks_list(
         .await
 }
 
+/// The whole library (every bookmark page), cached locally so the library
+/// also opens offline. One request per 200 games.
 #[tauri::command]
-pub async fn bookmarks_add(state: State<'_, AppState>, id: i64) -> Result<Bookmark, ApiError> {
-    state.api.add_bookmark(id).await
+pub async fn bookmarks_all(
+    state: State<'_, AppState>,
+    db: State<'_, Arc<Db>>,
+) -> Result<BookmarkListResponse, ApiError> {
+    let mut items = Vec::new();
+    let mut total;
+    loop {
+        let page = state
+            .api
+            .bookmarks(false, 200, items.len() as u32, Priority::Foreground)
+            .await?;
+        total = page.total;
+        let n = page.items.len();
+        items.extend(page.items);
+        if n < 200 || items.len() as i64 >= total {
+            break;
+        }
+    }
+    let threads: Vec<_> = items.iter().filter_map(|b| b.thread.clone()).collect();
+    let ids: Vec<i64> = items.iter().map(|b| b.thread_id).collect();
+    if let Err(e) = db
+        .cache_threads(&threads, true)
+        .and_then(|_| db.set_library_membership(&ids))
+    {
+        log::warn!("caching library failed: {e}");
+    }
+    total = total.max(items.len() as i64);
+    Ok(BookmarkListResponse { total, items })
 }
 
 #[tauri::command]
-pub async fn bookmarks_remove(state: State<'_, AppState>, id: i64) -> Result<(), ApiError> {
-    state.api.remove_bookmark(id).await
+pub async fn bookmarks_add(
+    state: State<'_, AppState>,
+    db: State<'_, Arc<Db>>,
+    id: i64,
+) -> Result<Bookmark, ApiError> {
+    let b = state.api.add_bookmark(id).await?;
+    if let Some(t) = &b.thread {
+        let _ = db.cache_threads(std::slice::from_ref(t), true);
+    }
+    let _ = db.set_in_library(id, true);
+    Ok(b)
+}
+
+#[tauri::command]
+pub async fn bookmarks_remove(
+    state: State<'_, AppState>,
+    db: State<'_, Arc<Db>>,
+    id: i64,
+) -> Result<(), ApiError> {
+    state.api.remove_bookmark(id).await?;
+    let _ = db.set_in_library(id, false);
+    Ok(())
 }
 
 #[tauri::command]
