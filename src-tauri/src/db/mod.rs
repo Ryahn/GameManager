@@ -687,6 +687,98 @@ impl Db {
     }
 }
 
+/// Where the reader left off in a comic, and how it was being read.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+pub struct ReadingProgress {
+    pub thread_id: i64,
+    pub chapter: i64,
+    pub page: i64,
+    pub pages_total: i64,
+    pub mode: String,
+    pub rtl: bool,
+    pub fit: String,
+    pub updated_at: i64,
+}
+
+/// A comic on Home's "Continue reading" row.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct ContinueItem {
+    pub thread_id: i64,
+    pub title: String,
+    pub cover: Option<String>,
+    pub page: i64,
+    pub pages_total: i64,
+    pub updated_at: i64,
+}
+
+impl Db {
+    pub fn progress_get(&self, id: i64) -> DbResult<Option<ReadingProgress>> {
+        self.conn()
+            .query_row(
+                "SELECT thread_id, chapter, page, pages_total, mode, rtl, fit, updated_at
+                 FROM reading_progress WHERE thread_id = ?1",
+                [id],
+                |r| {
+                    Ok(ReadingProgress {
+                        thread_id: r.get(0)?,
+                        chapter: r.get(1)?,
+                        page: r.get(2)?,
+                        pages_total: r.get(3)?,
+                        mode: r.get(4)?,
+                        rtl: r.get::<_, i64>(5)? != 0,
+                        fit: r.get(6)?,
+                        updated_at: r.get(7)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(err)
+    }
+
+    pub fn progress_set(&self, p: &ReadingProgress) -> DbResult<()> {
+        self.conn()
+            .execute(
+                "INSERT INTO reading_progress (thread_id, chapter, page, pages_total, mode, rtl, fit, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+                 ON CONFLICT(thread_id) DO UPDATE SET chapter = ?2, page = ?3, pages_total = ?4,
+                   mode = ?5, rtl = ?6, fit = ?7, updated_at = ?8",
+                rusqlite::params![p.thread_id, p.chapter, p.page, p.pages_total, p.mode, p.rtl as i64, p.fit, now()],
+            )
+            .map(|_| ())
+            .map_err(err)
+    }
+
+    /// Comics started but not finished, most recent first. Only ones still
+    /// in the library with a folder on disk.
+    pub fn continue_reading(&self, limit: i64) -> DbResult<Vec<ContinueItem>> {
+        let c = self.conn();
+        let mut st = c
+            .prepare(
+                "SELECT p.thread_id, g.title, g.cover, p.page, p.pages_total, p.updated_at
+                 FROM reading_progress p
+                 JOIN games g ON g.thread_id = p.thread_id
+                 JOIN user_games u ON u.thread_id = p.thread_id
+                 WHERE u.in_library = 1 AND u.install_dir IS NOT NULL
+                   AND p.pages_total > 0 AND p.page < p.pages_total - 1
+                 ORDER BY p.updated_at DESC LIMIT ?1",
+            )
+            .map_err(err)?;
+        st.query_map([limit], |r| {
+            Ok(ContinueItem {
+                thread_id: r.get(0)?,
+                title: r.get(1)?,
+                cover: r.get(2)?,
+                page: r.get(3)?,
+                pages_total: r.get(4)?,
+                updated_at: r.get(5)?,
+            })
+        })
+        .map_err(err)?
+        .collect::<Result<_, _>>()
+        .map_err(err)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

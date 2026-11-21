@@ -21,11 +21,11 @@ pub enum ArchiveKind {
 /// first part (`.part1.rar`, `.7z.001`, `.zip`).
 pub fn archive_kind(path: &Path) -> Option<ArchiveKind> {
     let name = path.file_name()?.to_str()?.to_lowercase();
-    if name.ends_with(".zip") || name.ends_with(".zip.001") {
+    if name.ends_with(".zip") || name.ends_with(".zip.001") || name.ends_with(".cbz") {
         Some(ArchiveKind::Zip)
-    } else if name.ends_with(".7z") || name.ends_with(".7z.001") {
+    } else if name.ends_with(".7z") || name.ends_with(".7z.001") || name.ends_with(".cb7") {
         Some(ArchiveKind::SevenZip)
-    } else if name.ends_with(".rar") {
+    } else if name.ends_with(".rar") || name.ends_with(".cbr") {
         Some(ArchiveKind::Rar)
     } else {
         None

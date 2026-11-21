@@ -1,10 +1,9 @@
 import { Link } from "@tanstack/react-router";
 import { ChevronRight } from "lucide-react";
 import { ErrorPanel } from "@/components/ui/primitives";
-import { useLibraryIds, useLibraryToggle, useLocalMap, usePlay, useRunning } from "@/hooks/queries";
+import { useLibraryIds, useLibraryToggle, useLocalMap, useOpenItem, useRunning } from "@/hooks/queries";
 import { GameCard, GameCardSkeleton, GameGrid, type GameCardData } from "./GameCard";
 import { withLocal } from "./mappers";
-import { api } from "@/lib/ipc";
 
 /** A titled block of game cards with loading, error and empty handling. */
 export function GameRow({
@@ -32,7 +31,7 @@ export function GameRow({
   const toggle = useLibraryToggle();
   const local = useLocalMap();
   const running = useRunning();
-  const play = usePlay();
+  const open = useOpenItem();
 
   return (
     <section className="mb-10">
@@ -59,9 +58,7 @@ export function GameRow({
                   game={withLocal(g, local.get(g.id))}
                   inLibrary={library.has(g.id)}
                   onToggleLibrary={(add) => toggle(g, add)}
-                  onPlay={() =>
-                    g.category && g.category !== "games" ? void api.openFolder(g.id) : play.mutate({ id: g.id, title: g.title })
-                  }
+                  onPlay={() => open(withLocal(g, local.get(g.id)))}
                   running={running.data?.has(g.id)}
                 />
               ))}

@@ -1,6 +1,6 @@
 import { memo, useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { Check, FolderOpen, ImageOff, Play, Plus, X } from "lucide-react";
+import { BookOpen, Check, FolderOpen, ImageOff, Play, Plus, X } from "lucide-react";
 import { Badge } from "@/components/ui/primitives";
 import { cn, cleanVersion, imageSrc, statusTone, timeAgo } from "@/lib/utils";
 import type { PlayStatus } from "@/lib/ipc";
@@ -26,7 +26,11 @@ export interface GameCardData {
   /** Installed on this computer but not in the server library (no update checks). */
   untracked?: boolean;
   playStatus?: PlayStatus;
+  /** Comics: where the reader left off. */
+  reading?: { page: number; total: number };
 }
+
+const PRIMARY = { games: { verb: "Play" }, comics: { verb: "Read" }, animations: { verb: "Open folder" } } as const;
 
 const TONE_TEXT = { success: "text-success", warning: "text-warning", danger: "text-danger", info: "text-info" } as const;
 
@@ -77,6 +81,11 @@ export const GameCard = memo(function GameCard({
       <Link to="/game/$id" params={{ id: String(game.id) }} className="absolute inset-0 z-[1]" aria-label={game.title} />
       <div className="relative">
         <Cover src={game.cover} alt="" className="aspect-[16/9]" />
+        {game.reading && (
+          <div className="absolute inset-x-0 bottom-0 h-1 bg-black/50" aria-hidden>
+            <div className="h-full bg-accent" style={{ width: `${Math.round(((game.reading.page + 1) / game.reading.total) * 100)}%` }} />
+          </div>
+        )}
         <div className="absolute left-2 top-2 flex flex-wrap gap-1">
           {game.hasUpdate && <Badge tone="accent" className="bg-accent text-accent-fg">Update</Badge>}
           {game.isNew && <Badge tone="solid">New</Badge>}
@@ -120,11 +129,17 @@ export const GameCard = memo(function GameCard({
             <button
               type="button"
               onClick={onPlay}
-              aria-label={game.category && game.category !== "games" ? `Open ${game.title}` : `Play ${game.title}`}
-              title={game.category && game.category !== "games" ? "Open folder" : "Play"}
+              aria-label={`${PRIMARY[game.category ?? "games"].verb} ${game.title}`}
+              title={PRIMARY[game.category ?? "games"].verb}
               className="absolute bottom-2 right-2 z-[2] grid size-10 place-items-center rounded-full bg-accent text-accent-fg opacity-0 shadow-card transition-all hover:scale-105 hover:bg-accent-hover group-hover:opacity-100 focus-visible:opacity-100"
             >
-              {game.category && game.category !== "games" ? <FolderOpen className="size-4" /> : <Play className="size-4 fill-current" />}
+              {game.category === "comics" ? (
+                <BookOpen className="size-4" />
+              ) : game.category === "animations" ? (
+                <FolderOpen className="size-4" />
+              ) : (
+                <Play className="size-4 fill-current" />
+              )}
             </button>
           )
         )}
@@ -134,7 +149,11 @@ export const GameCard = memo(function GameCard({
           {game.title}
         </h3>
         {game.creator && <p className="truncate text-[12.5px] text-muted">{game.creator}</p>}
-        {play && (
+        {game.reading ? (
+          <p className="text-[12px] text-muted">
+            Page {game.reading.page + 1} of {game.reading.total}
+          </p>
+        ) : play && (
           <p className="flex items-center gap-1.5 text-[12px] text-muted">
             <span className={cn("size-1.5 rounded-full", play.dot)} aria-hidden />
             {play.label}
