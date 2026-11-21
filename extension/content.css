@@ -1,0 +1,25 @@
+.f95gm-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 8px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: #8b7cf6;
+  color: #0e1014 !important;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
+  text-decoration: none !important;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.f95gm-add::before {
+  content: "+";
+  font-weight: 800;
+}
+
+.f95gm-add:hover {
+  background: #a094f8;
+}

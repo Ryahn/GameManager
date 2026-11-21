@@ -33,6 +33,8 @@ pub struct Settings {
     pub pixeldrain_user: Option<String>,
     pub mega_email: Option<String>,
     pub gofile_user: Option<String>,
+    /// Global shortcut that hides every window, e.g. "Ctrl+Shift+H".
+    pub boss_key: Option<String>,
 }
 
 impl Default for Settings {
@@ -55,6 +57,7 @@ impl Default for Settings {
             pixeldrain_user: None,
             mega_email: None,
             gofile_user: None,
+            boss_key: None,
         }
     }
 }

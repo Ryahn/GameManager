@@ -28,17 +28,29 @@ fn truncate(s: &str, n: usize) -> String {
 }
 
 fn build_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
-    let recent = app
-        .try_state::<Arc<Db>>()
-        .and_then(|db| db.recently_played(5).ok())
-        .unwrap_or_default();
+    let locked = app
+        .try_state::<Arc<crate::system::Lock>>()
+        .is_some_and(|l| l.is_locked());
+    let recent = if locked {
+        Vec::new()
+    } else {
+        app.try_state::<Arc<Db>>()
+            .and_then(|db| db.recently_played(5).ok())
+            .unwrap_or_default()
+    };
 
     let open = MenuItem::with_id(app, "open", "Open F95 Game Manager", true, None::<&str>)?;
     let sep1 = PredefinedMenuItem::separator(app)?;
     let header = MenuItem::with_id(
         app,
         "recent-header",
-        if recent.is_empty() { "No games played yet" } else { "Play" },
+        if locked {
+            "Locked"
+        } else if recent.is_empty() {
+            "No games played yet"
+        } else {
+            "Play"
+        },
         false,
         None::<&str>,
     )?;

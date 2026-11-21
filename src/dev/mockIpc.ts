@@ -199,6 +199,7 @@ const bookmark = (id: number) => {
 
 // ---- downloads
 let f95LoggedIn = false;
+const sys = { autostart: false, boss_key: null as string | null, pin: null as string | null, locked: false };
 let nextJob = 1;
 let daily = 3;
 type Job = Record<string, any>;
@@ -540,6 +541,53 @@ export function installMockIpc() {
         case "gofile_clear":
           settings.gofile_user = null;
           return { pixeldrain: settings.pixeldrain_user, mega: settings.mega_email, gofile: null };
+        case "system_info":
+          return { autostart: sys.autostart, boss_key: sys.boss_key, pin_enabled: !!sys.pin, locked: sys.locked, updater_configured: false };
+        case "autostart_set":
+          sys.autostart = args.enabled;
+          return sys.autostart;
+        case "boss_key_set":
+          sys.boss_key = args.shortcut;
+          return null;
+        case "pin_set":
+          if (sys.pin && args.current !== sys.pin) throw { kind: "invalid", message: "Your current PIN isn't right." };
+          sys.pin = args.pin;
+          return null;
+        case "pin_clear":
+          if (args.current !== sys.pin) throw { kind: "invalid", message: "That PIN isn't right." };
+          sys.pin = null;
+          sys.locked = false;
+          void emit("lock-changed", false);
+          return null;
+        case "pin_unlock":
+          if (args.pin === sys.pin) {
+            sys.locked = false;
+            void emit("lock-changed", false);
+            return true;
+          }
+          return false;
+        case "lock_app":
+          if (sys.pin) {
+            sys.locked = true;
+            void emit("lock-changed", true);
+          }
+          return null;
+        case "deep_link_take":
+          return null;
+        case "update_check":
+        case "update_install":
+          throw { kind: "invalid", message: "Automatic updates aren't set up in this build." };
+        case "f95checker_default_path":
+          return "C:\\Users\\you\\AppData\\Roaming\\f95checker\\db.sqlite3";
+        case "f95checker_import":
+          await delay(900);
+          return { games: 42, skipped_custom: 2, executables_linked: 30, executables_missing: 4, added_to_library: 38, not_in_catalog: 4 };
+        case "backup_export":
+          return local.size;
+        case "backup_import":
+          return { games: local.size, sessions_added: 0, added_to_library: 0 };
+        case "plugin:dialog|save":
+          return "D:\\backup.json";
         case "jdownloader_status":
           return true;
         case "jdownloader_send":

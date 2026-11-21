@@ -1,11 +1,14 @@
 mod api;
 mod auth;
+mod backup;
 mod commands;
 mod config;
+mod data_commands;
 mod db;
 mod download_commands;
 mod downloads;
 mod f95;
+mod f95checker;
 mod host_accounts;
 mod images;
 mod install;
@@ -16,12 +19,16 @@ mod local_commands;
 mod notify;
 mod settings;
 mod sync;
+mod system;
 mod tray;
 
 use std::sync::Arc;
 use std::time::Duration;
 
 use tauri::{Manager, WindowEvent};
+use tauri_plugin_deep_link::DeepLinkExt;
+use tauri_plugin_global_shortcut::ShortcutState;
+use tauri_plugin_window_state::StateFlags;
 
 use api::client::ApiClient;
 use commands::AppState;
@@ -35,7 +42,29 @@ pub fn run() {
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             tray::show_main(app);
         }))
-        .plugin(tauri_plugin_window_state::Builder::default().build())
+        // Links (f95gm://…) reach the running instance through this too.
+        .plugin(tauri_plugin_deep_link::init())
+        // Remember size/position, but decide visibility ourselves (start
+        // hidden when launched minimized at Windows sign-in).
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                .with_state_flags(StateFlags::all() & !StateFlags::VISIBLE)
+                .build(),
+        )
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            Some(vec!["--minimized"]),
+        ))
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(|app, _shortcut, event| {
+                    if event.state == ShortcutState::Pressed {
+                        system::boss_key_pressed(app);
+                    }
+                })
+                .build(),
+        )
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
@@ -74,11 +103,43 @@ pub fn run() {
             downloads.set_library(tauri::async_runtime::block_on(settings_for_downloads.get()).library_dir);
             app.manage(Arc::new(downloads));
             app.manage(Arc::new(f95::F95::default()));
+            let boss_key = tauri::async_runtime::block_on(settings.get()).boss_key;
             app.manage(AppState {
                 api,
                 http,
                 settings,
             });
+
+            // PIN lock starts locked; boss key from settings.
+            let lock = Arc::new(system::Lock::default());
+            app.manage(lock);
+            system::lock_now(app.handle());
+            if let Err(e) = system::register_boss_key(app.handle(), boss_key.as_deref()) {
+                log::warn!("boss key: {e}");
+            }
+
+            // f95gm:// links: from a running app, and the one that started it.
+            app.manage(system::PendingLink::default());
+            #[cfg(debug_assertions)]
+            if let Err(e) = app.deep_link().register_all() {
+                log::warn!("registering f95gm:// for development failed: {e}");
+            }
+            let link_app = app.handle().clone();
+            app.deep_link().on_open_url(move |event| {
+                for url in event.urls() {
+                    system::handle_link(&link_app, &url);
+                }
+            });
+            if let Ok(Some(urls)) = app.deep_link().get_current() {
+                for url in urls {
+                    system::handle_link(app.handle(), &url);
+                }
+            }
+
+            // Started with Windows: stay in the tray.
+            if !std::env::args().any(|a| a == "--minimized") {
+                tray::show_main(app.handle());
+            }
 
             tray::init(app.handle())?;
             sync::start(app.handle().clone());
@@ -146,6 +207,20 @@ pub fn run() {
             local_commands::library_import,
             local_commands::sync_now,
             local_commands::library_remove,
+            data_commands::f95checker_default_path,
+            data_commands::f95checker_import,
+            data_commands::backup_export,
+            data_commands::backup_import,
+            system::system_info,
+            system::deep_link_take,
+            system::pin_set,
+            system::pin_clear,
+            system::pin_unlock,
+            system::lock_app,
+            system::boss_key_set,
+            system::autostart_set,
+            system::update_check,
+            system::update_install,
             download_commands::f95_status,
             download_commands::f95_open,
             download_commands::links_get,

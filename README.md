@@ -109,10 +109,38 @@ SSO stays hidden until a client id is compiled in. To set it up:
    F95GM_OIDC_CLIENT_ID=<client id> F95GM_OIDC_ISSUER=https://auth.zonies.xyz/application/o/f95gamemanager/ npm run tauri build
    ```
 
+## Releases: updater and code signing
+
+Both need secrets, so they only live in your release pipeline and are never committed.
+
+1. **Updater keys:** run `npm run tauri signer generate -- -w ~/.tauri/f95gm.key` once.
+   - Keep the **private** key and its password in CI secrets, as `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`.
+   - The **public** key is safe to ship.
+2. **Build a release with the public values:**
+   ```bash
+   F95GM_UPDATER_PUBKEY="<public key>" F95GM_UPDATE_URL="https://f95api.xyz/launcher/latest.json" npm run tauri build -- --config '{"bundle":{"createUpdaterArtifacts":true}}'
+   ```
+   Then host the generated `latest.json` and the signed installer at that URL. Builds without these values never check for updates, and Settings says so.
+3. **Code signing:** sign the installer in CI, for example with Azure Trusted Signing, so Windows SmartScreen doesn't warn. The certificate never goes in the repo.
+
+## Links and the browser extension
+
+- `f95gm://add/<thread id>` adds a game and opens it. `f95gm://game/<thread id>` opens it.
+- The installer registers the scheme, and `npm run tauri dev` registers it for the dev build.
+- `extension/` holds a tiny MV3 extension for Chrome, Edge and Firefox. It puts an "Add to F95 Game Manager" button on F95 threads using those links, with no permissions and no network requests. See `extension/README.md`.
+
 ## Roadmap
 
 - [x] **Phase 0:** shell and design system, onboarding, API key + SSO sign-in, API client and limiter, Home / Discover / Library / Updates / Game / Settings
 - [x] **Phase 1:** local SQLite library (installed, finished and played versions, notes, labels, rating, play status), launching and playtime, folder scan with catalog matching, board view, skip-a-version, background update checks, tray and notifications, offline library
 - [x] **Phase 2:** F95 session window, first-post link reader with a per-version cache, download queue and anti-ban limits, mass-download warning and typed confirm, Pixeldrain and direct links, browser-window capture for everything else, unpack and install, updates that keep saves. *Still needs end-to-end testing with a real F95 account.*
-- [ ] **Phase 3:** start with Windows, F95Checker import, `f95gm://` deep links, browser extension, boss key and PIN, signed auto-updater and code signing
+- [x] **Phase 3:**
+  - start with Windows (opens in the tray)
+  - F95Checker import
+  - JSON backup and restore
+  - `f95gm://` links and the browser extension
+  - boss key and PIN lock
+  - signed auto-updater, which turns on once a public key and update URL are built in
+
+  *Still to do: the CI release pipeline and code signing.*
 - [ ] **Phase 4:** macOS, Linux and Steam Deck

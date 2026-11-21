@@ -20,7 +20,8 @@
         "minHeight": 620,
         "center": true,
         "theme": "Dark",
-        "backgroundColor": "#0e1014"
+        "backgroundColor": "#0e1014",
+        "visible": false
       }
     ],
     "security": {
@@ -29,7 +30,10 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["msi", "nsis"],
+    "targets": [
+      "msi",
+      "nsis"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -37,5 +41,18 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": [
+          "f95gm"
+        ]
+      }
+    },
+    "updater": {
+      "pubkey": "",
+      "endpoints": []
+    }
   }
 }

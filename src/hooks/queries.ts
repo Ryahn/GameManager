@@ -2,7 +2,8 @@ import { useEffect, useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { listen } from "@tauri-apps/api/event";
 import { toast } from "sonner";
-import { api, type Events, type LatestQuery, type LocalGame, type LocalPatch, type SettingsPatch } from "@/lib/ipc";
+import { useNavigate } from "@tanstack/react-router";
+import { api, type DeepLink, type Events, type LatestQuery, type LocalGame, type LocalPatch, type SettingsPatch } from "@/lib/ipc";
 import { formatPlaytime } from "@/lib/play";
 import { useUi } from "@/state/ui";
 import { friendlyError } from "@/lib/errors";
@@ -177,6 +178,15 @@ export function usePlay() {
 /** Listens for pushes from Rust and keeps the cache in step. Mount once. */
 export function useBackendEvents() {
   const qc = useQueryClient();
+  const navigate = useNavigate();
+  const onDeepLink = (l: DeepLink) => {
+    navigate({ to: "/game/$id", params: { id: String(l.thread_id) } });
+    if (l.added) {
+      qc.invalidateQueries({ queryKey: ["bookmarks"] });
+      qc.invalidateQueries({ queryKey: keys.local });
+      toast.success("Added to your library");
+    }
+  };
   useEffect(() => {
     const unlisten = [
       listen<Events["game-running"]>("game-running", ({ payload }) => {
@@ -212,7 +222,10 @@ export function useBackendEvents() {
         qc.invalidateQueries({ queryKey: keys.downloads });
       }),
       listen<Events["f95-status"]>("f95-status", ({ payload }) => qc.setQueryData(keys.f95, payload)),
+      listen<Events["deep-link"]>("deep-link", ({ payload }) => onDeepLink(payload)),
     ];
+    // A link that started the app arrived before this listener existed.
+    void api.deepLinkTake().then((l) => l && onDeepLink(l));
     let downloadsTimer: ReturnType<typeof setTimeout> | undefined;
     return () => unlisten.forEach((p) => p.then((f) => f()));
   }, [qc]);

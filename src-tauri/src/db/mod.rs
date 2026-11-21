@@ -85,7 +85,7 @@ pub struct CachedGame {
     pub last_promoted: Option<i64>,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct LocalGame {
     pub thread_id: i64,
     pub in_library: bool,
@@ -329,6 +329,21 @@ impl Db {
         Ok(games)
     }
 
+    /// Every game with any local state (for backups).
+    pub fn all(&self) -> DbResult<Vec<LocalGame>> {
+        let conn = self.conn();
+        let mut st = conn.prepare(Self::SELECT).map_err(err)?;
+        let mut games: Vec<LocalGame> = st
+            .query_map([], Self::row)
+            .map_err(err)?
+            .collect::<Result<_, _>>()
+            .map_err(err)?;
+        for g in &mut games {
+            g.targets = Self::targets_for(&conn, g.thread_id)?;
+        }
+        Ok(games)
+    }
+
     pub fn get(&self, id: i64) -> DbResult<Option<LocalGame>> {
         let conn = self.conn();
         let sql = format!("{} WHERE u.thread_id = ?1", Self::SELECT);
@@ -536,6 +551,41 @@ impl Db {
         )
         .map_err(err)?;
         tx.commit().map_err(err)
+    }
+
+    /// Raises totals from an import or backup without double counting:
+    /// playtime and last-played take the larger value, added-on the earlier.
+    pub fn merge_stats(
+        &self,
+        id: i64,
+        playtime_secs: i64,
+        last_played_at: Option<i64>,
+        added_at: Option<i64>,
+    ) -> DbResult<()> {
+        let conn = self.conn();
+        Self::ensure_row(&conn, id)?;
+        conn.execute(
+            "UPDATE user_games SET
+               playtime_secs = MAX(playtime_secs, ?2),
+               last_played_at = CASE WHEN ?3 IS NULL THEN last_played_at ELSE MAX(COALESCE(last_played_at, 0), ?3) END,
+               added_at = CASE WHEN ?4 IS NULL OR ?4 <= 0 THEN added_at ELSE MIN(added_at, ?4) END
+             WHERE thread_id = ?1",
+            params![id, playtime_secs.max(0), last_played_at, added_at],
+        )
+        .map(|_| ())
+        .map_err(err)
+    }
+
+    /// Adds a past session to the history (totals are set separately).
+    pub fn insert_session(&self, id: i64, started_at: i64, secs: i64, version: Option<&str>) -> DbResult<()> {
+        let conn = self.conn();
+        Self::ensure_row(&conn, id)?;
+        conn.execute(
+            "INSERT INTO play_sessions (thread_id, started_at, ended_at, secs, version) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![id, started_at, started_at + secs, secs, version],
+        )
+        .map(|_| ())
+        .map_err(err)
     }
 
     pub fn sessions(&self, id: i64, limit: u32) -> DbResult<Vec<PlaySession>> {

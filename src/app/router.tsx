@@ -10,7 +10,11 @@ import { UpdatesPage } from "@/features/updates/UpdatesPage";
 import { DownloadsPage } from "@/features/downloads/DownloadsPage";
 import { SettingsPage } from "@/features/settings/SettingsPage";
 import { GamePage } from "@/features/game/GamePage";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { listen } from "@tauri-apps/api/event";
 import { useAuth, useSettings } from "@/hooks/queries";
+import { api } from "@/lib/ipc";
+import { LockScreen } from "./LockScreen";
 import type { Settings } from "@/lib/ipc";
 
 function applyAppearance(s: Settings) {
@@ -26,6 +30,13 @@ function applyAppearance(s: Settings) {
 function Root() {
   const settings = useSettings();
   const auth = useAuth();
+  const qc = useQueryClient();
+  const sys = useQuery({ queryKey: ["system-info"], queryFn: api.systemInfo });
+
+  useEffect(() => {
+    const un = listen<boolean>("lock-changed", () => qc.invalidateQueries({ queryKey: ["system-info"] }));
+    return () => void un.then((f) => f());
+  }, [qc]);
 
   useEffect(() => {
     if (!settings.data) return;
@@ -44,6 +55,8 @@ function Root() {
       </div>
     );
   }
+
+  if (sys.data?.locked) return <LockScreen />;
 
   // Signed out, or setup not finished: show the wizard instead of the app.
   if (!settings.data.onboarding_complete || !auth.data.signed_in) return <Onboarding />;

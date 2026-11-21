@@ -35,6 +35,7 @@ export interface Settings {
   pixeldrain_user: string | null;
   mega_email: string | null;
   gofile_user: string | null;
+  boss_key: string | null;
 }
 
 export type SettingsPatch = Partial<
@@ -328,6 +329,8 @@ export interface Events {
   "download-captured": string;
   "game-installed": number;
   "f95-status": F95Status | null;
+  "deep-link": DeepLink;
+  "lock-changed": boolean;
 }
 
 /** Signed-in file-host accounts (display names only). */
@@ -335,6 +338,29 @@ export interface HostAccounts {
   pixeldrain: string | null;
   mega: string | null;
   gofile: string | null;
+}
+
+export interface SystemInfo {
+  autostart: boolean;
+  boss_key: string | null;
+  pin_enabled: boolean;
+  locked: boolean;
+  updater_configured: boolean;
+}
+
+export interface F95CheckerImport {
+  games: number;
+  skipped_custom: number;
+  executables_linked: number;
+  executables_missing: number;
+  added_to_library: number;
+  not_in_catalog: number;
+}
+
+export interface DeepLink {
+  action: "add" | "open";
+  thread_id: number;
+  added?: boolean;
 }
 
 /** Typed by the user to go past the daily download limit. */
@@ -417,6 +443,21 @@ export const api = {
   megaSignOut: () => invoke<HostAccounts>("mega_sign_out"),
   setGofileToken: (token: string) => invoke<HostAccounts>("gofile_set_token", { token }),
   clearGofile: () => invoke<HostAccounts>("gofile_clear"),
+
+  systemInfo: () => invoke<SystemInfo>("system_info"),
+  autostartSet: (enabled: boolean) => invoke<boolean>("autostart_set", { enabled }),
+  bossKeySet: (shortcut: string | null) => invoke<void>("boss_key_set", { shortcut }),
+  pinSet: (current: string | null, pin: string) => invoke<void>("pin_set", { current, pin }),
+  pinClear: (current: string) => invoke<void>("pin_clear", { current }),
+  pinUnlock: (pin: string) => invoke<boolean>("pin_unlock", { pin }),
+  lockNow: () => invoke<void>("lock_app"),
+  deepLinkTake: () => invoke<DeepLink | null>("deep_link_take"),
+  updateCheck: () => invoke<{ version: string; notes: string | null } | null>("update_check"),
+  updateInstall: () => invoke<void>("update_install"),
+  f95checkerDefaultPath: () => invoke<string | null>("f95checker_default_path"),
+  importF95checker: (path: string) => invoke<F95CheckerImport>("f95checker_import", { path }),
+  backupExport: (path: string) => invoke<number>("backup_export", { path }),
+  backupImport: (path: string) => invoke<{ games: number; sessions_added: number; added_to_library: number }>("backup_import", { path }),
 
   jdownloaderStatus: () => invoke<boolean>("jdownloader_status"),
   sendToJDownloader: (game: GameCtx, link: DownloadLink, confirm?: string) =>

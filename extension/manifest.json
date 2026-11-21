@@ -1,0 +1,20 @@
+{
+  "manifest_version": 3,
+  "name": "F95 Game Manager",
+  "version": "0.1.0",
+  "description": "Adds an \"Add to F95 Game Manager\" button to F95zone game threads.",
+  "content_scripts": [
+    {
+      "matches": ["https://f95zone.to/threads/*"],
+      "js": ["content.js"],
+      "css": ["content.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "f95gamemanager@f95api.xyz",
+      "strict_min_version": "115.0"
+    }
+  }
+}

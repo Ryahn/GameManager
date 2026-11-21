@@ -9,6 +9,7 @@ import { api, type Settings } from "@/lib/ipc";
 import { friendlyError } from "@/lib/errors";
 import { cn } from "@/lib/utils";
 import { HostAccounts } from "./HostAccounts";
+import { SystemSettings } from "./SystemSettings";
 
 const ACCENTS = ["violet", "blue", "teal", "amber", "rose"] as const;
 const ACCENT_SWATCH: Record<(typeof ACCENTS)[number], string> = {
@@ -194,6 +195,8 @@ export function SettingsPage() {
             <Switch label="Update notifications" checked={s.notify_updates} onChange={(notify_updates) => set({ notify_updates })} />
           </Row>
         </Section>
+
+        <SystemSettings version={info.data?.version} />
 
         <Section title="Privacy">
           <Row label="Blur covers" hint="Covers stay blurred until you hover them. Handy on a shared screen.">
