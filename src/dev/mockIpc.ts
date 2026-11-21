@@ -88,6 +88,8 @@ const library = new Map<number, { has_update: boolean; last_seen_version: string
   [100014, { has_update: false, last_seen_version: "" }],
   [100004, { has_update: false, last_seen_version: "" }],
   [100010, { has_update: false, last_seen_version: "" }],
+  [100007, { has_update: false, last_seen_version: "" }],
+  [100025, { has_update: false, last_seen_version: "" }],
 ]);
 
 // ---- local library (installed games, playtime, notes)
@@ -190,6 +192,34 @@ const mockBook = (id: number) => {
       : [{ name: "Summer Days", pages: Array.from({ length: 20 }, (_, i) => ({ src: mockPage(i + 1, 20), name: `p${i + 1}.png` })) }];
   return { root: dir, chapters, other_files: id === 100010 ? [`${dir}\\Artbook.pdf`] : [] };
 };
+
+// Seed: two animations on disk (one in seasons, with an .avi), and a saved spot.
+ensure(100007).install_dir = "D:\\Animations\\Night Shift";
+ensure(100025).install_dir = "D:\\Animations\\Island Days";
+const clip = (n: number) => `${location.origin}/src/dev/fixtures/clip${n}.mp4`;
+const watched = new Map<number, Map<string, { file: string; position: number; duration: number; updated_at: number }>>([
+  [100025, new Map([["Season 1/Episode 2.mp4", { file: "Season 1/Episode 2.mp4", position: 2.5, duration: 6, updated_at: now - 300 }]])],
+]);
+const mockPlaylist = (id: number) => {
+  const root = local.get(id)?.install_dir ?? "";
+  const video = (file: string, n: number, playable = true) => ({
+    src: playable ? `${clip(n)}?file=${encodeURIComponent(file)}` : `${location.origin}/missing.avi`,
+    name: file.split("/").pop()!.replace(/\.[^.]+$/, ""),
+    file,
+    path: `${root}\\${file.replaceAll("/", "\\")}`,
+    size: 67_000,
+    playable,
+  });
+  const groups =
+    id === 100025
+      ? [
+          { name: "Season 1", videos: [video("Season 1/Episode 1.mp4", 1), video("Season 1/Episode 2.mp4", 2), video("Season 1/Episode 3.mp4", 3)] },
+          { name: "Season 2", videos: [video("Season 2/Episode 1.mp4", 2), video("Season 2/Extras.avi", 0, false)] },
+        ]
+      : [{ name: "Night Shift", videos: [video("Night Shift.mp4", 1), video("Night Shift (alt).mp4", 3)] }];
+  return { root, groups };
+};
+const watchList = (id: number) => [...(watched.get(id)?.values() ?? [])].sort((a, b) => b.updated_at - a.updated_at);
 
 const running = new Set<number>();
 let scanCancelled = false;
@@ -459,6 +489,25 @@ export function installMockIpc() {
             });
         case "media_open_external":
           return null;
+        case "media_playlist":
+          if (!local.get(args.id)?.install_dir) throw { kind: "invalid", message: "This has no folder yet." };
+          return { playlist: mockPlaylist(args.id), progress: watchList(args.id) };
+        case "media_watch_set": {
+          if (!watched.has(args.id)) watched.set(args.id, new Map());
+          watched.get(args.id)!.set(args.file, { file: args.file, position: args.position, duration: args.duration, updated_at: Date.now() / 1000 });
+          return null;
+        }
+        case "media_watch_last":
+          return watchList(args.id)[0] ?? null;
+        case "media_continue_watching":
+          return [...watched.keys()]
+            .map((id) => ({ id, w: watchList(id)[0] }))
+            .filter(({ w }) => w && w.duration > 0 && w.position < w.duration * 0.95)
+            .sort((a, b) => b.w.updated_at - a.w.updated_at)
+            .map(({ id, w }) => {
+              const g = games.find((x) => x.id === id);
+              return { ...w, thread_id: id, title: g?.name ?? "", cover: g?.cover ?? null };
+            });
         case "library_scan": {
           scanCancelled = false;
           const kind = args.category ?? "games";

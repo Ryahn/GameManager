@@ -779,6 +779,89 @@ impl Db {
     }
 }
 
+/// Where a video was left off. `file` is relative to the title's folder.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct WatchProgress {
+    pub file: String,
+    pub position: f64,
+    pub duration: f64,
+    pub updated_at: i64,
+}
+
+/// A title on Home's "Continue watching" row.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct ContinueWatch {
+    pub thread_id: i64,
+    pub title: String,
+    pub cover: Option<String>,
+    pub file: String,
+    pub position: f64,
+    pub duration: f64,
+    pub updated_at: i64,
+}
+
+impl Db {
+    pub fn watch_get(&self, id: i64) -> DbResult<Vec<WatchProgress>> {
+        let c = self.conn();
+        let mut st = c
+            .prepare(
+                "SELECT file, position, duration, updated_at FROM watch_progress
+                 WHERE thread_id = ?1 ORDER BY updated_at DESC, rowid DESC",
+            )
+            .map_err(err)?;
+        st.query_map([id], |r| {
+            Ok(WatchProgress { file: r.get(0)?, position: r.get(1)?, duration: r.get(2)?, updated_at: r.get(3)? })
+        })
+        .map_err(err)?
+        .collect::<Result<_, _>>()
+        .map_err(err)
+    }
+
+    pub fn watch_set(&self, id: i64, file: &str, position: f64, duration: f64) -> DbResult<()> {
+        self.conn()
+            .execute(
+                "INSERT INTO watch_progress (thread_id, file, position, duration, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5)
+                 ON CONFLICT(thread_id, file) DO UPDATE SET position = ?3, duration = ?4, updated_at = ?5",
+                params![id, file, position, duration, now()],
+            )
+            .map(|_| ())
+            .map_err(err)
+    }
+
+    /// The most recent unfinished video of each title still in the library.
+    pub fn continue_watching(&self, limit: i64) -> DbResult<Vec<ContinueWatch>> {
+        let c = self.conn();
+        let mut st = c
+            .prepare(
+                "SELECT w.thread_id, g.title, g.cover, w.file, w.position, w.duration, w.updated_at
+                 FROM watch_progress w
+                 JOIN games g ON g.thread_id = w.thread_id
+                 JOIN user_games u ON u.thread_id = w.thread_id
+                 WHERE u.in_library = 1 AND u.install_dir IS NOT NULL
+                   AND w.rowid = (SELECT x.rowid FROM watch_progress x WHERE x.thread_id = w.thread_id
+                                  ORDER BY x.updated_at DESC, x.rowid DESC LIMIT 1)
+                   AND w.duration > 0 AND w.position < w.duration * 0.95
+                 ORDER BY w.updated_at DESC LIMIT ?1",
+            )
+            .map_err(err)?;
+        st.query_map([limit], |r| {
+            Ok(ContinueWatch {
+                thread_id: r.get(0)?,
+                title: r.get(1)?,
+                cover: r.get(2)?,
+                file: r.get(3)?,
+                position: r.get(4)?,
+                duration: r.get(5)?,
+                updated_at: r.get(6)?,
+            })
+        })
+        .map_err(err)?
+        .collect::<Result<_, _>>()
+        .map_err(err)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

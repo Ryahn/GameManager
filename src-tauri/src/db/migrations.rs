@@ -102,6 +102,15 @@ const MIGRATIONS: &[&str] = &[
         fit         TEXT NOT NULL DEFAULT 'height',
         updated_at  INTEGER NOT NULL DEFAULT 0
      );",
+    // v5: where each video was left off
+    "CREATE TABLE watch_progress (
+        thread_id  INTEGER NOT NULL,
+        file       TEXT NOT NULL,
+        position   REAL NOT NULL DEFAULT 0,
+        duration   REAL NOT NULL DEFAULT 0,
+        updated_at INTEGER NOT NULL DEFAULT 0,
+        PRIMARY KEY (thread_id, file)
+     );",
 ];
 
 pub fn run(conn: &mut Connection, path: Option<&Path>) -> Result<(), String> {

@@ -82,7 +82,7 @@ pub struct Book {
 }
 
 // Paths travel base64url-encoded so no web engine can rewrite separators.
-fn enc(s: &str) -> String {
+pub(crate) fn enc(s: &str) -> String {
     use base64::Engine;
     base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(s)
 }
@@ -110,7 +110,7 @@ fn name_of(p: &Path) -> String {
         .to_string()
 }
 
-fn sorted_children(dir: &Path) -> (Vec<PathBuf>, Vec<PathBuf>) {
+pub(crate) fn sorted_children(dir: &Path) -> (Vec<PathBuf>, Vec<PathBuf>) {
     let Ok(rd) = std::fs::read_dir(dir) else {
         return (Vec::new(), Vec::new());
     };
@@ -419,8 +419,71 @@ fn not_found() -> Response<Vec<u8>> {
     respond(StatusCode::NOT_FOUND, "text/plain", b"not found".to_vec())
 }
 
-/// Answers `/f/<path>` (a file) and `/z/<archive>/<entry>` (a zip entry).
-pub fn serve(roots: &MediaRoots, request_path: &str) -> Response<Vec<u8>> {
+/// The most a single video response carries; the player asks for more.
+const VIDEO_CHUNK: u64 = 4 * 1024 * 1024;
+
+fn video_type(p: &Path) -> &'static str {
+    match p.extension().and_then(|e| e.to_str()).unwrap_or_default().to_lowercase().as_str() {
+        "webm" => "video/webm",
+        "mkv" => "video/x-matroska",
+        "ogv" => "video/ogg",
+        // mp4, m4v and mov (H.264 in a QuickTime box plays as mp4)
+        _ => "video/mp4",
+    }
+}
+
+/// `bytes=a-b`, `bytes=a-` or `bytes=-n` as an inclusive range.
+fn parse_range(header: &str, len: u64) -> Option<(u64, u64)> {
+    let spec = header.trim().strip_prefix("bytes=")?.split(',').next()?.trim();
+    let (a, b) = spec.split_once('-')?;
+    if a.is_empty() {
+        let n: u64 = b.parse().ok()?;
+        return (n > 0 && len > 0).then(|| (len.saturating_sub(n), len - 1));
+    }
+    let start: u64 = a.parse().ok()?;
+    if start >= len {
+        return None;
+    }
+    let end = if b.is_empty() { len - 1 } else { b.parse::<u64>().ok()?.min(len - 1) };
+    (end >= start).then_some((start, end))
+}
+
+/// A slice of a video file, so seeking never loads the whole file.
+fn serve_video(p: &Path, range: Option<&str>) -> Response<Vec<u8>> {
+    use std::io::{Seek, SeekFrom};
+    let Ok(mut f) = std::fs::File::open(p) else { return not_found() };
+    let len = f.metadata().map(|m| m.len()).unwrap_or(0);
+    let (start, end) = match range.map(|h| parse_range(h, len)) {
+        Some(Some(r)) => r,
+        Some(None) => {
+            return Response::builder()
+                .status(StatusCode::RANGE_NOT_SATISFIABLE)
+                .header(header::CONTENT_RANGE, format!("bytes */{len}"))
+                .body(Vec::new())
+                .unwrap();
+        }
+        None if len == 0 => return respond(StatusCode::OK, video_type(p), Vec::new()),
+        None => (0, len - 1),
+    };
+    let end = end.min(start + VIDEO_CHUNK - 1);
+    let mut buf = vec![0; (end - start + 1) as usize];
+    if f.seek(SeekFrom::Start(start)).is_err() || f.read_exact(&mut buf).is_err() {
+        return not_found();
+    }
+    Response::builder()
+        .status(StatusCode::PARTIAL_CONTENT)
+        .header(header::CONTENT_TYPE, video_type(p))
+        .header(header::ACCEPT_RANGES, "bytes")
+        .header(header::CONTENT_RANGE, format!("bytes {start}-{end}/{len}"))
+        .header(header::CONTENT_LENGTH, buf.len().to_string())
+        .header(header::CACHE_CONTROL, "no-store")
+        .body(buf)
+        .unwrap()
+}
+
+/// Answers `/f/<path>` (an image), `/z/<archive>/<entry>` (an image in a
+/// zip) and `/v/<path>` (a video, in ranges).
+pub fn serve(roots: &MediaRoots, request_path: &str, range: Option<&str>) -> Response<Vec<u8>> {
     let mut parts = request_path.trim_start_matches('/').splitn(3, '/');
     let kind = parts.next().unwrap_or_default();
     let dec = |s: Option<&str>| s.and_then(dec);
@@ -441,6 +504,18 @@ pub fn serve(roots: &MediaRoots, request_path: &str) -> Response<Vec<u8>> {
                 Ok(bytes) => respond(StatusCode::OK, content_type(&p.to_string_lossy()), bytes),
                 Err(_) => not_found(),
             }
+        }
+        "v" => {
+            let Some(path) = dec(parts.next()) else {
+                return not_found();
+            };
+            let Some(p) = roots.permits(Path::new(&path)) else {
+                return respond(StatusCode::FORBIDDEN, "text/plain", b"not allowed".to_vec());
+            };
+            if !crate::media::is_video(&p) {
+                return not_found();
+            }
+            serve_video(&p, range)
         }
         "z" => {
             let (Some(archive), Some(entry)) = (dec(parts.next()), dec(parts.next())) else {
@@ -641,16 +716,16 @@ mod tests {
         // Serving: allowed pages load, anything else is refused.
         let mr = MediaRoots::default();
         mr.allow(roots);
-        let ok = serve(&mr, &book.chapters[1].pages[0].src);
+        let ok = serve(&mr, &book.chapters[1].pages[0].src, None);
         assert_eq!(ok.status(), StatusCode::OK);
         assert_eq!(ok.headers()[header::CONTENT_TYPE], "image/png");
-        let zipped = serve(&mr, &book.chapters[0].pages[0].src);
+        let zipped = serve(&mr, &book.chapters[0].pages[0].src, None);
         assert_eq!(zipped.status(), StatusCode::OK);
         let outside =
             std::env::temp_dir().join(format!("f95gm-outside-{}.jpg", std::process::id()));
         fs::write(&outside, b"secret").unwrap();
         assert_eq!(
-            serve(&mr, &file_src(&outside)).status(),
+            serve(&mr, &file_src(&outside), None).status(),
             StatusCode::FORBIDDEN
         );
         let sneaky = format!(
@@ -661,12 +736,12 @@ mod tests {
                 .to_string_lossy())
         );
         assert_ne!(
-            serve(&mr, &sneaky).status(),
+            serve(&mr, &sneaky, None).status(),
             StatusCode::OK,
             "no escaping with .."
         );
         assert_eq!(
-            serve(&mr, &file_src(&d.join("notes.txt"))).status(),
+            serve(&mr, &file_src(&d.join("notes.txt")), None).status(),
             StatusCode::NOT_FOUND,
             "only images"
         );

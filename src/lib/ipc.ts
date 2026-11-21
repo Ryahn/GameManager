@@ -424,6 +424,42 @@ export interface ContinueItem {
   updated_at: number;
 }
 
+export interface Video {
+  /** Path for the local media scheme; see mediaSrc. */
+  src: string;
+  name: string;
+  /** Path inside the title's folder; the key for saved positions. */
+  file: string;
+  /** Full path, for opening in another player. */
+  path: string;
+  size: number;
+  /** False for formats the app can't play (avi, wmv…): they open in the user's player. */
+  playable: boolean;
+}
+
+export interface VideoGroup {
+  name: string;
+  videos: Video[];
+}
+
+export interface Playlist {
+  root: string;
+  groups: VideoGroup[];
+}
+
+export interface WatchProgress {
+  file: string;
+  position: number;
+  duration: number;
+  updated_at: number;
+}
+
+export interface ContinueWatch extends WatchProgress {
+  thread_id: number;
+  title: string;
+  cover: string | null;
+}
+
 export type ApiError =
   | { kind: "not_signed_in" }
   | { kind: "unauthorized"; message: string }
@@ -478,6 +514,11 @@ export const api = {
   saveProgress: (progress: ReadingProgress) => invoke<void>("media_progress_set", { progress }),
   continueReading: (limit = 12) => invoke<ContinueItem[]>("media_continue", { limit }),
   openExternal: (path: string) => invoke<void>("media_open_external", { path }),
+  openPlaylist: (id: number) => invoke<{ playlist: Playlist; progress: WatchProgress[] }>("media_playlist", { id }),
+  saveWatch: (id: number, file: string, position: number, duration: number) =>
+    invoke<void>("media_watch_set", { id, file, position, duration }),
+  lastWatched: (id: number) => invoke<WatchProgress | null>("media_watch_last", { id }),
+  continueWatching: (limit = 12) => invoke<ContinueWatch[]>("media_continue_watching", { limit }),
   scan: (dir: string, category = "games") => invoke<ScanFolder[]>("library_scan", { dir, category }),
   cancelScan: () => invoke<void>("library_scan_cancel"),
   importScan: (items: ImportItem[]) =>

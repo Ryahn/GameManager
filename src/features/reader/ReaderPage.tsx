@@ -23,6 +23,7 @@ import { api, type Book, type FitMode, type ReadingProgress, type ReadMode } fro
 import { friendlyError } from "@/lib/errors";
 import { cn, mediaSrc } from "@/lib/utils";
 import { flatten, pageLabel, spreadOf, spreads } from "./book";
+import { setFullscreen } from "@/lib/fullscreen";
 import { toast } from "sonner";
 
 const MODES: { value: ReadMode; label: string; icon: typeof Square }[] = [
@@ -91,17 +92,6 @@ function Shell({ children }: { children: React.ReactNode }) {
       {children}
     </div>
   );
-}
-
-async function setFullscreen(on: boolean) {
-  try {
-    const { getCurrentWindow } = await import("@tauri-apps/api/window");
-    await getCurrentWindow().setFullscreen(on);
-  } catch {
-    // Outside the app shell (dev in a browser).
-    if (on) await document.documentElement.requestFullscreen?.().catch(() => {});
-    else if (document.fullscreenElement) await document.exitFullscreen().catch(() => {});
-  }
 }
 
 function Reader({

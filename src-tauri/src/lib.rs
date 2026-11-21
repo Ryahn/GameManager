@@ -19,6 +19,7 @@ mod local_commands;
 mod media;
 mod notify;
 mod platform;
+mod player;
 mod reader;
 mod settings;
 mod sync;
@@ -81,8 +82,9 @@ pub fn run() {
         .register_asynchronous_uri_scheme_protocol("gmmedia", |ctx, request, responder| {
             let roots = ctx.app_handle().state::<Arc<reader::MediaRoots>>().inner().clone();
             let path = request.uri().path().to_string();
+            let range = request.headers().get("range").and_then(|v| v.to_str().ok()).map(str::to_string);
             tauri::async_runtime::spawn_blocking(move || {
-                responder.respond(reader::serve(&roots, &path));
+                responder.respond(reader::serve(&roots, &path, range.as_deref()));
             });
         })
         .setup(|app| {
@@ -224,6 +226,10 @@ pub fn run() {
             reader::media_progress_set,
             reader::media_continue,
             reader::media_open_external,
+            player::media_playlist,
+            player::media_watch_set,
+            player::media_watch_last,
+            player::media_continue_watching,
             local_commands::library_scan,
             local_commands::library_scan_cancel,
             local_commands::library_import,

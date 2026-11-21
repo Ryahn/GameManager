@@ -15,6 +15,7 @@ import { kindOf } from "@/lib/kinds";
 import { api } from "@/lib/ipc";
 import { FilesPanel, HistoryPanel, NotesPanel, useLocate } from "./YourGame";
 import { DownloadDialog } from "./DownloadDialog";
+import { clock, videoName } from "@/components/game/mappers";
 
 type Tab = "overview" | "changelog" | "details" | "files" | "notes" | "history";
 
@@ -40,6 +41,30 @@ function ReadButton({ id }: { id: number }) {
         className="inline-flex h-11 items-center gap-2 rounded-lg bg-accent px-5 text-[15px] font-medium text-accent-fg shadow-sm transition-colors hover:bg-accent-hover [&_svg]:size-4"
       >
         <BookOpen /> {resume ? `Continue · page ${p.page + 1} of ${p.pages_total}` : "Read"}
+      </Link>
+      <Tooltip content="Open folder" side="bottom">
+        <Button variant="outline" size="icon" className="size-11" aria-label="Open folder" onClick={() => void api.openFolder(id)}>
+          <FolderOpen />
+        </Button>
+      </Tooltip>
+    </>
+  );
+}
+
+/** Watch, or pick up the last video where it was left. */
+function WatchButton({ id }: { id: number }) {
+  const last = useQuery({ queryKey: ["watch-last", id], queryFn: () => api.lastWatched(id), staleTime: 0 });
+  const w = last.data;
+  const resume = w && w.duration > 0 && w.position < w.duration * 0.95;
+  return (
+    <>
+      <Link
+        to="/watch/$id"
+        params={{ id: String(id) }}
+        className="inline-flex h-11 max-w-[360px] items-center gap-2 rounded-lg bg-accent px-5 text-[15px] font-medium text-accent-fg shadow-sm transition-colors hover:bg-accent-hover [&_svg]:size-4"
+      >
+        <Play className="fill-current" />
+        <span className="truncate">{resume ? `Continue ${videoName(w.file)} · ${clock(w.position)}` : "Watch"}</span>
       </Link>
       <Tooltip content="Open folder" side="bottom">
         <Button variant="outline" size="icon" className="size-11" aria-label="Open folder" onClick={() => void api.openFolder(id)}>
@@ -150,9 +175,7 @@ export function GamePage() {
                 ) : kind === "comics" ? (
                   <ReadButton id={threadId} />
                 ) : (
-                  <Button variant="primary" size="lg" onClick={() => void api.openFolder(threadId)}>
-                    <FolderOpen /> Open folder
-                  </Button>
+                  <WatchButton id={threadId} />
                 )}
               </>
             ) : (

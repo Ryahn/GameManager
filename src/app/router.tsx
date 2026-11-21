@@ -11,6 +11,7 @@ import { DownloadsPage } from "@/features/downloads/DownloadsPage";
 import { SettingsPage } from "@/features/settings/SettingsPage";
 import { GamePage } from "@/features/game/GamePage";
 import { ReaderPage } from "@/features/reader/ReaderPage";
+import { PlayerPage } from "@/features/player/PlayerPage";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { listen } from "@tauri-apps/api/event";
 import { useAuth, useSettings } from "@/hooks/queries";
@@ -79,6 +80,7 @@ const routeTree = rootRoute.addChildren([
   ]),
   // Full screen, outside the sidebar layout (the lock screen still applies).
   createRoute({ getParentRoute: () => rootRoute, path: "/read/$id", component: ReaderPage }),
+  createRoute({ getParentRoute: () => rootRoute, path: "/watch/$id", component: PlayerPage }),
 ]);
 
 export const router = createRouter({ routeTree, history: createHashHistory(), defaultPreload: false });
