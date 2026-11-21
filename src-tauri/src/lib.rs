@@ -17,6 +17,7 @@ mod library;
 mod limiter;
 mod local_commands;
 mod notify;
+mod platform;
 mod settings;
 mod sync;
 mod system;
@@ -84,6 +85,7 @@ pub fn run() {
                 .timeout(Duration::from_secs(30))
                 .build()?;
             let api = Arc::new(ApiClient::new(config::API_BASE));
+            auth::store::set_fallback_dir(data_dir.clone());
             let settings = Arc::new(SettingsStore::load(data_dir.clone()));
             let db = Arc::new(db::Db::open(&data_dir)?);
             let db_for_downloads = db.clone();
@@ -104,6 +106,7 @@ pub fn run() {
             app.manage(Arc::new(downloads));
             app.manage(Arc::new(f95::F95::default()));
             let boss_key = tauri::async_runtime::block_on(settings.get()).boss_key;
+            platform::set_custom_runner(tauri::async_runtime::block_on(settings.get()).wine_command);
             app.manage(AppState {
                 api,
                 http,
@@ -120,7 +123,9 @@ pub fn run() {
 
             // f95gm:// links: from a running app, and the one that started it.
             app.manage(system::PendingLink::default());
-            #[cfg(debug_assertions)]
+            // Windows: the installer registers f95gm:// (dev builds do it
+            // here). Linux: AppImages can't, so always register at start.
+            #[cfg(any(debug_assertions, target_os = "linux"))]
             if let Err(e) = app.deep_link().register_all() {
                 log::warn!("registering f95gm:// for development failed: {e}");
             }
@@ -212,6 +217,7 @@ pub fn run() {
             data_commands::backup_export,
             data_commands::backup_import,
             system::system_info,
+            system::compat_status,
             system::deep_link_take,
             system::pin_set,
             system::pin_clear,

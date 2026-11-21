@@ -16,6 +16,9 @@ export interface AppInfo {
   version: string;
   sso_configured: boolean;
   api_keys_url: string;
+  platform: "windows" | "macos" | "linux";
+  steam_deck: boolean;
+  pick_extensions: string[];
 }
 
 export interface Settings {
@@ -36,6 +39,7 @@ export interface Settings {
   mega_email: string | null;
   gofile_user: string | null;
   boss_key: string | null;
+  wine_command: string | null;
 }
 
 export type SettingsPatch = Partial<
@@ -52,6 +56,7 @@ export type SettingsPatch = Partial<
     | "notify_updates"
     | "max_active_downloads"
     | "delete_archives"
+    | "wine_command"
   >
 >;
 
@@ -445,6 +450,7 @@ export const api = {
   clearGofile: () => invoke<HostAccounts>("gofile_clear"),
 
   systemInfo: () => invoke<SystemInfo>("system_info"),
+  compatStatus: () => invoke<{ runner: { kind: "umu" | "wine" | "cross_over" | "custom"; program: string } | null }>("compat_status"),
   autostartSet: (enabled: boolean) => invoke<boolean>("autostart_set", { enabled }),
   bossKeySet: (shortcut: string | null) => invoke<void>("boss_key_set", { shortcut }),
   pinSet: (current: string | null, pin: string) => invoke<void>("pin_set", { current, pin }),

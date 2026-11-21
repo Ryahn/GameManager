@@ -126,7 +126,7 @@ export function LibraryPage() {
   const [scanOpen, setScanOpen] = useState(false);
 
   const localMap = useMemo(() => new Map(localQ.data?.map((g) => [g.thread_id, g]) ?? []), [localQ.data]);
-  // Can't reach the server: fall back to the copy saved on this PC.
+  // Can't reach the server: fall back to the copy saved on this computer.
   const offline = !!library.error && !!localQ.data?.some((g) => g.in_library);
 
   const all: Entry[] = useMemo(() => {
@@ -136,7 +136,7 @@ export function LibraryPage() {
         const local = localMap.get(b.thread_id);
         return { card: withLocal(fromBookmark(b), local), local };
       });
-      // Installed on this PC but not in the server library: still listed,
+      // Installed on this computer but not in the server library: still listed,
       // so nothing on disk is ever "missing" from the library.
       const installedOnly = (localQ.data ?? [])
         .filter((l) => l.targets.length > 0 && !tracked.has(l.thread_id))
@@ -197,7 +197,7 @@ export function LibraryPage() {
           action={
             <div className="flex flex-wrap justify-center gap-2">
               <Button variant="primary" onClick={() => setScanOpen(true)}>
-                <FolderSearch /> Find games on this PC
+                <FolderSearch /> Find games on this computer
               </Button>
               <Link to="/discover">
                 <Button variant="outline">
@@ -228,7 +228,7 @@ export function LibraryPage() {
         }
         actions={
           <Button variant="outline" onClick={() => setScanOpen(true)}>
-            <FolderSearch /> Find games on this PC
+            <FolderSearch /> Find games on this computer
           </Button>
         }
       />
@@ -237,7 +237,7 @@ export function LibraryPage() {
         <div role="status" className="mb-5 flex items-center gap-3 rounded-xl border border-warning/30 bg-warning/8 px-4 py-3 text-sm">
           <WifiOff className="size-4 shrink-0 text-warning" />
           <span className="flex-1">
-            <span className="font-medium">Offline.</span> <span className="text-muted">Showing the copy saved on this PC. You can still play installed games.</span>
+            <span className="font-medium">Offline.</span> <span className="text-muted">Showing the copy saved on this computer. You can still play installed games.</span>
           </span>
           <Button size="sm" variant="ghost" onClick={() => library.refetch()} loading={library.isFetching}>
             Try again
@@ -372,7 +372,7 @@ export function LibraryPage() {
                   <p className="flex items-center gap-2 truncate font-medium">
                     <span className="truncate">{g.title}</span>
                     {g.hasUpdate && <Badge tone="accent">Update</Badge>}
-                    {g.untracked && <Badge title="Installed on this PC, but not tracked for updates">Not tracked</Badge>}
+                    {g.untracked && <Badge title="Installed on this computer, but not tracked for updates">Not tracked</Badge>}
                   </p>
                   <p className="truncate text-sm text-muted">{g.creator}</p>
                 </Link>
@@ -397,7 +397,7 @@ export function LibraryPage() {
                   <Button
                     size="icon-sm"
                     variant="ghost"
-                    title={g.untracked ? "Remove from this PC's list…" : "Remove from library…"}
+                    title={g.untracked ? "Remove from this computer's list…" : "Remove from library…"}
                     aria-label={`Remove ${g.title} from library`}
                     className="opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
                     onClick={() => toggle(g, false)}

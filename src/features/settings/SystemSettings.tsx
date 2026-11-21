@@ -9,6 +9,7 @@ import { Input, Section, Select, Switch } from "@/components/ui/primitives";
 import { keys } from "@/hooks/queries";
 import { api } from "@/lib/ipc";
 import { friendlyError } from "@/lib/errors";
+import { useOs } from "@/lib/platform";
 
 const SYS = ["system-info"] as const;
 
@@ -99,8 +100,73 @@ function PinForm({ enabled, onDone }: { enabled: boolean; onDone: () => void }) 
   );
 }
 
+function WindowsGames() {
+  const qc = useQueryClient();
+  const os = useOs();
+  const status = useQuery({ queryKey: ["compat-status"], queryFn: api.compatStatus });
+  const settings = useQuery({ queryKey: keys.settings, queryFn: api.settings });
+  const [path, setPath] = useState<string | null>(null);
+  const value = path ?? settings.data?.wine_command ?? "";
+  const runner = status.data?.runner;
+  const names = { umu: "umu-launcher (Proton)", wine: "Wine", cross_over: "CrossOver", custom: "Your program" } as const;
+  const save = async (v: string) => {
+    try {
+      qc.setQueryData(keys.settings, await api.updateSettings({ wine_command: v }));
+      qc.invalidateQueries({ queryKey: ["compat-status"] });
+      setPath(null);
+      toast.success(v ? "Saved" : "Back to automatic");
+    } catch (e) {
+      fail("Couldn't save")(e);
+    }
+  };
+  const browse = async () => {
+    const p = (await openDialog({ multiple: false, title: "Choose umu-run, wine or another runner" })) as string | null;
+    if (p) await save(p);
+  };
+  return (
+    <Section
+      title="Windows games"
+      description={
+        os.steamDeck
+          ? "Most F95 games are Windows-only. On Steam Deck they run through Proton with umu-launcher (install it from Discover or the AUR)."
+          : "Most F95 games are Windows-only. They run through Proton (umu-launcher), Wine, or CrossOver on macOS."
+      }
+    >
+      <Row
+        label={runner ? `Using ${names[runner.kind]}` : "Nothing found"}
+        hint={runner ? runner.program : "Install umu-launcher or Wine, or choose the program yourself. Native Linux/macOS builds always run directly."}
+      >
+        <span />
+      </Row>
+      <form
+        className="mt-1 flex gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void save(value);
+        }}
+      >
+        <Input value={value} onChange={(e) => setPath(e.target.value)} placeholder="Automatic (umu-run, then wine)" aria-label="Runner program" className="h-9 flex-1 font-mono text-[12.5px]" />
+        <Button type="button" size="sm" variant="outline" onClick={browse}>
+          Browse…
+        </Button>
+        {settings.data?.wine_command && (
+          <Button type="button" size="sm" variant="ghost" onClick={() => save("")}>
+            Use automatic
+          </Button>
+        )}
+        {path !== null && (
+          <Button type="submit" size="sm">
+            Save
+          </Button>
+        )}
+      </form>
+    </Section>
+  );
+}
+
 export function SystemSettings({ version }: { version?: string }) {
   const qc = useQueryClient();
+  const os = useOs();
   const sys = useQuery({ queryKey: SYS, queryFn: api.systemInfo });
   const f95cPath = useQuery({ queryKey: ["f95checker-path"], queryFn: api.f95checkerDefaultPath, staleTime: Infinity });
   const [busy, setBusy] = useState<string | null>(null);
@@ -135,7 +201,7 @@ export function SystemSettings({ version }: { version?: string }) {
         toast.success(`Imported ${r.games} game${r.games === 1 ? "" : "s"} from F95Checker`, {
           description: [
             `${r.executables_linked} linked to their executables`,
-            r.executables_missing ? `${r.executables_missing} executables not found on this PC` : "",
+            r.executables_missing ? `${r.executables_missing} executables not found on this computer` : "",
             r.not_in_catalog ? `${r.not_in_catalog} not in the catalog yet` : "",
             r.skipped_custom ? `${r.skipped_custom} custom games skipped` : "",
           ]
@@ -172,10 +238,12 @@ export function SystemSettings({ version }: { version?: string }) {
 
   return (
     <>
+      {os.platform !== "windows" && <WindowsGames />}
+
       <Section title="Startup & privacy">
-        <Row label="Start with Windows" hint="Opens in the tray when you sign in, so update checks run in the background.">
+        <Row label={os.signIn} hint="Opens in the tray when you sign in, so update checks run in the background.">
           <Switch
-            label="Start with Windows"
+            label={os.signIn}
             checked={!!s?.autostart}
             onChange={(v) => busyRun("autostart", () => api.autostartSet(v), refresh, "Couldn't change that")}
           />
@@ -207,13 +275,13 @@ export function SystemSettings({ version }: { version?: string }) {
         </div>
       </Section>
 
-      <Section title="Import & backup" description="Bring your library over from F95Checker, or keep a copy of everything stored on this PC.">
+      <Section title="Import & backup" description="Bring your library over from F95Checker, or keep a copy of everything stored on this computer.">
         <Row
           label="Import from F95Checker"
           hint={
             f95cPath.data
               ? `Found: ${f95cPath.data}. Close F95Checker first. Nothing in it is changed.`
-              : "Pick F95Checker's db.sqlite3 (usually in %APPDATA%\\f95checker). Nothing in it is changed."
+              : `Pick F95Checker's db.sqlite3 (usually in ${os.platform === "windows" ? "%APPDATA%\\f95checker" : os.platform === "macos" ? "~/Library/Application Support/f95checker" : "~/.config/f95checker"}). Nothing in it is changed.`
           }
         >
           <div className="flex gap-2">

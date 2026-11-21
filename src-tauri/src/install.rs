@@ -72,6 +72,11 @@ fn extract_zip(archive: &Path, dest: &Path) -> InstallResult<usize> {
         }
         let mut f = fs::File::create(&out).map_err(|e| e.to_string())?;
         io::copy(&mut entry, &mut f).map_err(|e| e.to_string())?;
+        #[cfg(unix)]
+        if let Some(mode) = entry.unix_mode() {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = fs::set_permissions(&out, fs::Permissions::from_mode(mode & 0o777 | 0o600));
+        }
         written += 1;
     }
     Ok(written)
@@ -116,6 +121,34 @@ fn extract_rar(archive: &Path, dest: &Path) -> InstallResult<usize> {
         };
     }
     Ok(written)
+}
+
+/// Linux/macOS: archives packed on Windows lose the executable bit, so mark
+/// the game's binaries and scripts runnable (and every file inside a macOS
+/// app's `Contents/MacOS`).
+pub fn fix_permissions(root: &Path) {
+    if cfg!(windows) {
+        return;
+    }
+    fn walk(dir: &Path, depth: usize) {
+        let Ok(rd) = fs::read_dir(dir) else { return };
+        for e in rd.filter_map(Result::ok) {
+            let p = e.path();
+            let Ok(ft) = e.file_type() else { continue };
+            if ft.is_dir() {
+                if p.file_name().is_some_and(|n| n == "MacOS") {
+                    for f in fs::read_dir(&p).into_iter().flatten().filter_map(Result::ok) {
+                        crate::platform::make_executable(&f.path());
+                    }
+                } else if depth < 4 {
+                    walk(&p, depth + 1);
+                }
+            } else if ft.is_file() && crate::platform::kind(&p) == Some(crate::platform::Kind::Native) {
+                crate::platform::make_executable(&p);
+            }
+        }
+    }
+    walk(root, 0);
 }
 
 /// Archives usually wrap the game in one folder; returns that folder.

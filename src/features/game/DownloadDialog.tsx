@@ -52,7 +52,7 @@ export function DownloadDialog({
     setBusy(`jd:${link.url}`);
     try {
       await api.sendToJDownloader(game, link, confirm);
-      toast.success("Sent to JDownloader", { description: "It handles the download there. Install it with Find games on this PC when it's done." });
+      toast.success("Sent to JDownloader", { description: "It handles the download there. Install it with Find games on this computer when it's done." });
     } catch (e) {
       const err = e as ApiError;
       if (err?.kind === "confirm_required") setStep({ kind: "confirm", link, daily: err.daily, limit: err.limit });
@@ -237,7 +237,7 @@ export function DownloadDialog({
                     <section key={g.label + gi} className={cn("rounded-xl border p-3", gi === recommended ? "border-accent/50 bg-accent/5" : "border-border")}>
                       <header className="mb-2 flex items-center gap-2">
                         <h3 className="text-sm font-semibold">{g.label}</h3>
-                        {gi === recommended && <Badge tone="accent">For this PC</Badge>}
+                        {gi === recommended && <Badge tone="accent">For this computer</Badge>}
                       </header>
                       <ul className="space-y-1.5">
                         {g.links.map((l) => {

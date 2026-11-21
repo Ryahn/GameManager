@@ -9,6 +9,17 @@ It brings together the best ideas from F95Checker, wLib and XLibrary:
 - server-side update detection, including stealth updates
 - downloads paced so users don't get banned
 
+## Platforms
+
+| | Windows | Linux / Steam Deck | macOS |
+| --- | --- | --- | --- |
+| Installer | `.msi`, `.exe` (NSIS) | `.AppImage`, `.deb`, `.rpm` | `.dmg` (universal) |
+| Windows games | run directly | Proton via [umu-launcher](https://github.com/Open-Wine-Components/umu-launcher), else Wine | CrossOver, else Wine |
+| Native games | — | `.sh`, `.x86_64`, AppImage, Linux binaries | `.app` bundles |
+| Secrets stored in | Credential Manager | Secret Service (KWallet/GNOME Keyring), else a 0600 file | Keychain |
+
+On Steam Deck, install the AppImage in Desktop Mode and add it to Steam as a non-Steam game if you want it in Game Mode. Game Mode has no keyring, so sign-in details go to a file only your user can read. Windows games run through umu-launcher, and the app downloads GE-Proton the first time if you haven't chosen a Proton build yourself. You can pick a different program under Settings → Windows games.
+
 ## Quick start
 
 ```bash
@@ -111,12 +122,22 @@ SSO stays hidden until a client id is compiled in. To set it up:
 
 ## Releases: updater and code signing
 
-Both need secrets, so they only live in your release pipeline and are never committed.
+GitHub Actions does the work:
+- `.github/workflows/ci.yml` runs the type check, frontend tests, `cargo clippy` and `cargo test` on Windows, Linux and macOS for every push and pull request.
+- `.github/workflows/release.yml` runs when you push a tag like `v0.2.0`. It builds installers for all three systems into a **draft** GitHub release, which you publish yourself.
+
+Signing needs secrets, so they live only in the repository settings and are never committed.
 
 1. **Updater keys:** run `npm run tauri signer generate -- -w ~/.tauri/f95gm.key` once.
    - Keep the **private** key and its password in CI secrets, as `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`.
    - The **public** key is safe to ship.
-2. **Build a release with the public values:**
+2. **Turn on signed updates:** in the GitHub repository settings, add:
+   - the secrets `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`
+   - the variable `F95GM_UPDATER_PUBKEY`
+
+   Release builds then make signed update files plus `latest.json`, and the app checks this repository's latest release.
+
+   To build by hand instead:
    ```bash
    F95GM_UPDATER_PUBKEY="<public key>" F95GM_UPDATE_URL="https://f95api.xyz/launcher/latest.json" npm run tauri build -- --config '{"bundle":{"createUpdaterArtifacts":true}}'
    ```
@@ -143,4 +164,12 @@ Both need secrets, so they only live in your release pipeline and are never comm
   - signed auto-updater, which turns on once a public key and update URL are built in
 
   *Still to do: the CI release pipeline and code signing.*
-- [ ] **Phase 4:** macOS, Linux and Steam Deck
+- [x] **Phase 4:**
+  - Linux, Steam Deck and macOS builds
+  - native game detection
+  - Proton, Wine and CrossOver for Windows games
+  - executable permissions after unpacking
+  - per-OS credential storage
+  - CI and release workflows
+
+  *Still to do: "Add to Steam" for individual games, a controller-friendly layout for Game Mode, and macOS notarization.*

@@ -58,17 +58,15 @@ pub fn game_update(
 }
 
 fn check_launchable(path: &Path) -> Result<(), ApiError> {
-    let ext = path
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or_default()
-        .to_lowercase();
-    if !detect::LAUNCHABLE_EXT.contains(&ext.as_str()) {
+    if !path.exists() {
+        return Err(invalid("That file doesn't exist any more."));
+    }
+    if !detect::is_launchable(path) {
         return Err(invalid(
-            "Pick the game's .exe (or index.html for browser games).",
+            "Pick the game's program (or index.html for browser games).",
         ));
     }
-    if !path.is_file() {
+    if !path.is_file() && !path.is_dir() {
         return Err(invalid("That file doesn't exist any more."));
     }
     Ok(())
@@ -434,7 +432,7 @@ pub async fn library_remove(
             tauri::async_runtime::spawn_blocking(move || trash::delete(&path))
                 .await
                 .map_err(ApiError::internal)?
-                .map_err(|e| invalid(format!("Couldn't move the game to the Recycle Bin: {e}")))?;
+                .map_err(|e| invalid(format!("Couldn't move the game to the {}: {e}", if cfg!(windows) { "Recycle Bin" } else { "Trash" })))?;
         }
     db.unlink_install(id).map_err(internal)?;
     crate::tray::refresh(&app);

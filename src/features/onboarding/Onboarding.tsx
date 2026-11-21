@@ -24,6 +24,7 @@ import { api, type AuthStatus } from "@/lib/ipc";
 import { friendlyError } from "@/lib/errors";
 import { keys, useAppInfo, useAuth, useSettings, useUpdateSettings } from "@/hooks/queries";
 import { cn } from "@/lib/utils";
+import { useOs } from "@/lib/platform";
 
 type Step = "welcome" | "account" | "folder" | "done";
 const STEPS: Step[] = ["welcome", "account", "folder", "done"];
@@ -117,6 +118,7 @@ function Welcome({ onNext }: { onNext: () => void }) {
 }
 
 function Account({ onBack, onNext }: { onBack: () => void; onNext: () => void }) {
+  const { keychain } = useOs();
   const qc = useQueryClient();
   const info = useAppInfo();
   const ssoReady = info.data?.sso_configured ?? false;
@@ -223,7 +225,7 @@ function Account({ onBack, onNext }: { onBack: () => void; onNext: () => void })
           <Button type="submit" className="w-full" disabled={!key.trim() || busy === "sso"} loading={busy === "key"}>
             Connect
           </Button>
-          <p className="text-xs text-faint">The key is stored in Windows Credential Manager, not in a file.</p>
+          <p className="text-xs text-faint">The key is stored in {keychain}, not in a plain file.</p>
         </form>
       )}
 

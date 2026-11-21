@@ -12,6 +12,8 @@ use std::time::Duration;
 
 use serde::Serialize;
 use sysinfo::{ProcessRefreshKind, ProcessesToUpdate, System, UpdateKind};
+
+use crate::platform::{self, Kind};
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_opener::OpenerExt;
 
@@ -48,13 +50,6 @@ impl Launcher {
     }
 }
 
-fn ext(p: &Path) -> String {
-    p.extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or_default()
-        .to_lowercase()
-}
-
 /// Splits user-entered arguments, honouring double quotes.
 pub fn split_args(s: &str) -> Vec<String> {
     let mut out = Vec::new();
@@ -88,20 +83,21 @@ fn tracking_root(target: &Path, install_dir: Option<&str>) -> PathBuf {
     target.parent().map(Path::to_path_buf).unwrap_or_default()
 }
 
-fn lower(p: &Path) -> String {
-    p.to_string_lossy().replace('/', "\\").to_lowercase()
-}
-
+/// Any process running from inside `root`, or started with a path inside it
+/// (Windows games under Wine/Proton show up as the Wine loader with the
+/// game's .exe as an argument).
 fn any_process_in(sys: &mut System, root: &str) -> bool {
     sys.refresh_processes_specifics(
         ProcessesToUpdate::All,
         true,
-        ProcessRefreshKind::nothing().with_exe(UpdateKind::OnlyIfNotSet),
+        ProcessRefreshKind::nothing()
+            .with_exe(UpdateKind::OnlyIfNotSet)
+            .with_cmd(UpdateKind::OnlyIfNotSet),
     );
-    sys.processes()
-        .values()
-        .filter_map(|p| p.exe())
-        .any(|exe| lower(exe).starts_with(root))
+    sys.processes().values().any(|p| {
+        p.exe().is_some_and(|e| platform::is_under(&e.to_string_lossy(), root))
+            || p.cmd().iter().any(|a| platform::is_under(&a.to_string_lossy(), root))
+    })
 }
 
 /// Starts a game with the chosen (or default) launch target.
@@ -140,7 +136,7 @@ fn launch(
         return Err("This game is already running.".into());
     }
     let path = PathBuf::from(&target.path);
-    if !path.is_file() {
+    if !path.exists() {
         return Err(format!(
             "The game file is missing: {}. It may have been moved or deleted.",
             target.path
@@ -149,8 +145,46 @@ fn launch(
     let db = app.state::<Arc<Db>>().inner().clone();
     let started = db::now();
 
-    let child: Option<Child> = match ext(&path).as_str() {
-        "exe" => {
+    let kind = platform::kind(&path).ok_or("The launcher can't start this kind of file.")?;
+    let child: Option<Child> = match kind {
+        Kind::WindowsExe if !cfg!(windows) => {
+            let runner = platform::find_runner().ok_or(
+                "To play Windows games here, install umu-launcher (Proton) or Wine, or choose the program in Settings → Windows games.",
+            )?;
+            let mut cmd = platform::runner_command(&runner, &path);
+            cmd.args(split_args(&target.args));
+            if let Some(dir) = path.parent() {
+                cmd.current_dir(dir);
+            }
+            Some(cmd.spawn().map_err(|e| format!("Couldn't start {}: {e}", runner.program.display()))?)
+        }
+        Kind::Native if cfg!(target_os = "macos") && path.is_dir() => {
+            // `open -W` waits until the app quits, so the session is timed.
+            let mut cmd = Command::new("open");
+            cmd.arg("-W").arg(&path);
+            let args = split_args(&target.args);
+            if !args.is_empty() {
+                cmd.arg("--args").args(args);
+            }
+            Some(cmd.spawn().map_err(|e| format!("Couldn't start the game: {e}"))?)
+        }
+        Kind::Native => {
+            platform::make_executable(&path);
+            let is_script = path.extension().is_some_and(|e| e.eq_ignore_ascii_case("sh"));
+            let mut cmd = if is_script {
+                let mut c = Command::new("sh");
+                c.arg(&path);
+                c
+            } else {
+                Command::new(&path)
+            };
+            cmd.args(split_args(&target.args));
+            if let Some(dir) = path.parent() {
+                cmd.current_dir(dir);
+            }
+            Some(cmd.spawn().map_err(|e| format!("Couldn't start the game: {e}"))?)
+        }
+        Kind::WindowsExe => {
             let mut cmd = Command::new(&path);
             cmd.args(split_args(&target.args));
             if let Some(dir) = path.parent() {
@@ -167,13 +201,12 @@ fn launch(
                 _ => format!("Couldn't start the game: {e}"),
             })?)
         }
-        "html" | "htm" | "lnk" | "bat" => {
+        Kind::Open => {
             app.opener()
                 .open_path(target.path.clone(), None::<&str>)
                 .map_err(|e| format!("Couldn't open the game: {e}"))?;
             None
         }
-        _ => return Err("Only .exe, .html, .bat and shortcut files can be launched.".into()),
     };
 
     // Browser games and shortcuts can't be timed; just remember the launch.
@@ -204,11 +237,11 @@ fn launch(
     // Trailing separator so `Games\Haven` doesn't also match `Games\Haven2`.
     // A game sitting at a drive root would match everything, so only the
     // launched process itself is tracked then.
-    let root = lower(&tracking_root(&path, install_dir));
-    let root = if root.trim_end_matches('\\').len() <= 3 {
+    let root_path = tracking_root(&path, install_dir);
+    let root = if platform::is_too_shallow(&root_path) {
         String::new()
     } else {
-        format!("{}\\", root.trim_end_matches('\\'))
+        root_path.to_string_lossy().into_owned()
     };
     let app = app.clone();
     std::thread::spawn(move || {

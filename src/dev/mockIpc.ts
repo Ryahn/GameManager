@@ -267,7 +267,7 @@ export function installMockIpc() {
       await delay(cmd.startsWith("catalog") ? 450 : 120);
       switch (cmd) {
         case "app_info":
-          return { version: "0.1.0-dev", sso_configured: false, api_keys_url: "https://f95api.xyz/panel/keys" };
+          return { version: "0.1.0-dev", sso_configured: false, api_keys_url: "https://f95api.xyz/panel/keys", platform: "windows", steam_deck: false, pick_extensions: ["exe", "html", "htm", "bat", "lnk"] };
         case "settings_get":
           return settings;
         case "settings_update":
@@ -541,6 +541,8 @@ export function installMockIpc() {
         case "gofile_clear":
           settings.gofile_user = null;
           return { pixeldrain: settings.pixeldrain_user, mega: settings.mega_email, gofile: null };
+        case "compat_status":
+          return { runner: null };
         case "system_info":
           return { autostart: sys.autostart, boss_key: sys.boss_key, pin_enabled: !!sys.pin, locked: sys.locked, updater_configured: false };
         case "autostart_set":

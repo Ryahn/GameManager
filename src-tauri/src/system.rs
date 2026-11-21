@@ -346,3 +346,18 @@ mod tests {
         assert_eq!(hash_pin("a", "1234"), hash_pin("a", "1234"));
     }
 }
+
+// ------------------------------------------------- Windows games elsewhere
+
+#[derive(Serialize)]
+pub struct CompatStatus {
+    runner: Option<crate::platform::Runner>,
+}
+
+/// Which program runs Windows games on Linux/macOS (None on Windows).
+#[tauri::command]
+pub fn compat_status() -> CompatStatus {
+    CompatStatus {
+        runner: crate::platform::find_runner(),
+    }
+}
