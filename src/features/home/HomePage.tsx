@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { GameRow } from "@/components/game/GameRow";
-import { fromBookmark, fromContinue, fromHandiwork, fromLocal } from "@/components/game/mappers";
-import { useContinueReading, useLatest, useLocalLibrary, useSettings, useUpdateInbox } from "@/hooks/queries";
+import { fromBookmark, fromContinue, fromHandiwork, fromLocal, fromWatch } from "@/components/game/mappers";
+import { useContinueReading, useContinueWatching, useLatest, useLocalLibrary, useSettings, useUpdateInbox } from "@/hooks/queries";
 
 function greeting() {
   const h = new Date().getHours();
@@ -16,6 +16,7 @@ export function HomePage() {
   const inbox = useUpdateInbox();
   const local = useLocalLibrary();
   const reading = useContinueReading();
+  const watching = useContinueWatching();
   const latest = useLatest({ order: "date", limit: 18 });
   const topRated = useLatest({ order: "rating", date: 30, limit: 12 });
   const name = settings.data?.username;
@@ -48,6 +49,8 @@ export function HomePage() {
       {continuePlaying.length > 0 && <GameRow title="Continue playing" games={continuePlaying} seeAllTo="/library" />}
 
       {!!reading.data?.length && <GameRow title="Continue reading" games={reading.data.slice(0, 6).map(fromContinue)} seeAllTo="/library" />}
+
+      {!!watching.data?.length && <GameRow title="Continue watching" games={watching.data.slice(0, 6).map(fromWatch)} seeAllTo="/library" />}
 
       {!!updateGames?.length && <GameRow title="Updates for you" games={updateGames} seeAllTo="/updates" />}
 

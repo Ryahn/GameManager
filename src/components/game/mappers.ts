@@ -1,4 +1,4 @@
-import type { Bookmark, ContinueItem, Handiwork, LocalGame, SearchHit, ThreadSummary } from "@/lib/ipc";
+import type { Bookmark, ContinueItem, ContinueWatch, Handiwork, LocalGame, SearchHit, ThreadSummary } from "@/lib/ipc";
 import type { GameCardData } from "./GameCard";
 import { kindOf } from "@/lib/kinds";
 
@@ -57,7 +57,29 @@ export const fromContinue = (c: ContinueItem): GameCardData => ({
   cover: c.cover,
   category: "comics",
   installed: true,
-  reading: { page: c.page, total: c.pages_total },
+  progress: { value: (c.page + 1) / c.pages_total, label: `Page ${c.page + 1} of ${c.pages_total}` },
+});
+
+/** "1:02:05" / "4:09". */
+export function clock(secs: number) {
+  const s = Math.max(0, Math.floor(secs));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const ss = String(s % 60).padStart(2, "0");
+  return h ? `${h}:${String(m).padStart(2, "0")}:${ss}` : `${m}:${ss}`;
+}
+
+/** The video's name without folders or extension. */
+export const videoName = (file: string) => file.split("/").pop()!.replace(/\.[^.]+$/, "");
+
+/** A title on the "Continue watching" row. */
+export const fromWatch = (w: ContinueWatch): GameCardData => ({
+  id: w.thread_id,
+  title: w.title || `Thread ${w.thread_id}`,
+  cover: w.cover,
+  category: "animations",
+  installed: true,
+  progress: { value: w.position / w.duration, label: `${videoName(w.file)} · ${clock(w.duration - w.position)} left` },
 });
 
 /** A card from the offline cache, for when the server can't be reached. */

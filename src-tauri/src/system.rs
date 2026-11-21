@@ -219,6 +219,8 @@ pub fn boss_key_pressed(app: &AppHandle) {
     let windows = app.webview_windows();
     let any_visible = windows.values().any(|w| w.is_visible().unwrap_or(false));
     if any_visible {
+        // Lets a playing video pause before the window disappears.
+        let _ = app.emit("boss-key", true);
         for w in windows.values() {
             let _ = w.hide();
         }
