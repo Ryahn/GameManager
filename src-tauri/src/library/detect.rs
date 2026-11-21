@@ -36,6 +36,9 @@ pub struct Candidate {
 
 /// Executables that ship with games but are never the game.
 const NOT_GAMES: &[&str] = &[
+    "install",
+    "uninstall",
+    "notification_helper",
     "unitycrashhandler",
     "crashhandler",
     "crashpad_handler",
@@ -85,7 +88,10 @@ const SKIP_DIRS: &[&str] = &[
     "data",
 ];
 
-pub const LAUNCHABLE_EXT: &[&str] = &["exe", "html", "htm", "bat", "lnk"];
+/// Whether `p` is something the launcher can start on this OS.
+pub fn is_launchable(p: &Path) -> bool {
+    crate::platform::kind(p).is_some()
+}
 
 fn lower_name(p: &Path) -> String {
     p.file_name()
@@ -142,6 +148,12 @@ fn engine_of(exe: &Path) -> Engine {
 
 /// Turns `My_Game-32` into "My Game (32-bit)".
 fn friendly(exe: &Path, engine: Engine) -> String {
+    let needs_compat = !cfg!(windows) && crate::platform::kind(exe) == Some(crate::platform::Kind::WindowsExe);
+    let base = friendly_base(exe, engine);
+    if needs_compat { format!("{base} (Windows)") } else { base }
+}
+
+fn friendly_base(exe: &Path, engine: Engine) -> String {
     let s = stem(exe);
     let (base, suffix) = if let Some(b) = s.strip_suffix("-32") {
         (b.to_string(), " (32-bit)")
@@ -161,6 +173,15 @@ fn friendly(exe: &Path, engine: Engine) -> String {
 fn score(exe: &Path, engine: Engine, depth: usize, folder_hint: &str) -> i32 {
     let s = stem(exe).to_lowercase();
     let mut score = 100 - (depth as i32) * 20;
+    // Off Windows, a native build beats the Windows .exe (which needs
+    // Proton/Wine).
+    if !cfg!(windows) {
+        match crate::platform::kind(exe) {
+            Some(crate::platform::Kind::WindowsExe) => score -= 40,
+            Some(crate::platform::Kind::Native) => score += 15,
+            _ => {}
+        }
+    }
     if engine != Engine::Other {
         score += 30;
     }
@@ -203,6 +224,13 @@ fn walk(dir: &Path, depth: usize, max: usize, out: &mut Vec<(PathBuf, usize)>, b
         }
         if ft.is_dir() {
             let n = lower_name(&p);
+            // A macOS app bundle is one launchable thing, not a folder to search.
+            if n.ends_with(".app") {
+                if crate::platform::kind(&p).is_some() && !is_helper(&stem(&p).to_lowercase()) {
+                    out.push((p, depth));
+                }
+                continue;
+            }
             if !SKIP_DIRS.contains(&n.as_str()) && !n.ends_with("_data") && !n.starts_with('.') {
                 subdirs.push(p);
             }
@@ -212,9 +240,16 @@ fn walk(dir: &Path, depth: usize, max: usize, out: &mut Vec<(PathBuf, usize)>, b
                 .and_then(|x| x.to_str())
                 .unwrap_or_default()
                 .to_lowercase();
-            let is_exe = ext == "exe" && !is_helper(&stem(&p).to_lowercase());
+            if is_helper(&stem(&p).to_lowercase()) {
+                continue;
+            }
             let is_index = (ext == "html" || ext == "htm") && lower_name(&p).starts_with("index.");
-            if is_exe || is_index {
+            let runnable = match crate::platform::kind(&p) {
+                Some(crate::platform::Kind::Open) => is_index,
+                Some(_) => true,
+                None => false,
+            };
+            if runnable {
                 out.push((p, depth));
             }
         }

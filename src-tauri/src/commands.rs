@@ -27,6 +27,11 @@ pub struct AppInfo {
     version: &'static str,
     sso_configured: bool,
     api_keys_url: &'static str,
+    /// "windows" | "macos" | "linux"
+    platform: &'static str,
+    steam_deck: bool,
+    /// Extensions for "pick the game's executable" dialogs.
+    pick_extensions: Vec<&'static str>,
 }
 
 #[tauri::command]
@@ -35,6 +40,9 @@ pub fn app_info() -> AppInfo {
         version: env!("CARGO_PKG_VERSION"),
         sso_configured: auth::sso_configured(),
         api_keys_url: config::API_KEYS_URL,
+        platform: crate::platform::os(),
+        steam_deck: crate::platform::is_steam_deck(),
+        pick_extensions: crate::platform::pick_extensions(),
     }
 }
 
@@ -50,11 +58,13 @@ pub async fn settings_update(
     state: State<'_, AppState>,
     patch: SettingsPatch,
 ) -> Result<Settings, ApiError> {
-    state
+    let s = state
         .settings
         .update(|s| s.apply(patch))
         .await
-        .map_err(ApiError::internal)
+        .map_err(ApiError::internal)?;
+    crate::platform::set_custom_runner(s.wine_command.clone());
+    Ok(s)
 }
 
 // -------------------------------------------------------------------- auth

@@ -12,11 +12,13 @@ import { keys, useLocalGame } from "@/hooks/queries";
 import { api } from "@/lib/ipc";
 import { friendlyError } from "@/lib/errors";
 import { useUi } from "@/state/ui";
+import { useOs } from "@/lib/platform";
 
 export function RemoveGameDialog() {
   const target = useUi((s) => s.removeTarget);
   const close = useUi((s) => s.closeRemove);
   const qc = useQueryClient();
+  const os = useOs();
   const local = useLocalGame(target?.id ?? 0);
   const [deleteFiles, setDeleteFiles] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -33,7 +35,7 @@ export function RemoveGameDialog() {
       qc.invalidateQueries({ queryKey: keys.local });
       qc.invalidateQueries({ queryKey: keys.localGame(target.id) });
       toast.success(`Removed ${target.title}`, {
-        description: deleteFiles && installDir ? "Its files are in the Recycle Bin." : "Its files are still on this PC.",
+        description: deleteFiles && installDir ? `Its files are in the ${os.trash}.` : "Its files are still on this computer.",
       });
       close();
     } catch (e) {
@@ -46,7 +48,7 @@ export function RemoveGameDialog() {
   return (
     <Dialog open={!!target} onOpenChange={(v) => !v && close()}>
       <DialogContent title={`Remove ${target?.title ?? "game"} from your library?`} description="It stops being tracked for updates and leaves your library.">
-        <p className="text-sm text-muted">Your notes, rating and play history stay saved on this PC in case you add it back.</p>
+        <p className="text-sm text-muted">Your notes, rating and play history stay saved on this computer in case you add it back.</p>
         {installDir && (
           <label className="mt-4 flex cursor-default items-start gap-3 rounded-xl border border-border bg-surface-2 p-3">
             <input
@@ -60,7 +62,7 @@ export function RemoveGameDialog() {
               <span className="mt-0.5 block truncate font-mono text-[12px] text-faint" title={installDir}>
                 {installDir}
               </span>
-              <span className="mt-1 block text-[12.5px] text-muted">Moved to the Recycle Bin, so you can restore them. Saves inside the folder go too.</span>
+              <span className="mt-1 block text-[12.5px] text-muted">Moved to the {os.trash}, so you can restore them. Saves inside the folder go too.</span>
             </span>
           </label>
         )}

@@ -667,6 +667,7 @@ async fn install_job(app: &AppHandle, id: i64) {
             None => crate::install::destination(&lib2, "Unsorted", &job2.title, "download"),
         };
         crate::install::move_dir(&root, &dest).map_err(|e| format!("Couldn't move the game into place: {e}"))?;
+        crate::install::fix_permissions(&dest);
         let _ = std::fs::remove_dir_all(&staging);
 
         let mut saves = Vec::new();

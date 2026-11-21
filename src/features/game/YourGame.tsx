@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Badge, Input, Section, Tooltip } from "@/components/ui/primitives";
 import { useLocalActions, useLocalLibrary, usePlay, useRunning, useSessions, useUpdateLocal } from "@/hooks/queries";
 import { useUi } from "@/state/ui";
+import { useOs } from "@/lib/platform";
 import { api, type LocalGame } from "@/lib/ipc";
 import { friendlyError } from "@/lib/errors";
 import { formatPlaytime, sameVersion } from "@/lib/play";
@@ -15,11 +16,13 @@ import { cleanVersion, cn } from "@/lib/utils";
 /** Pick a folder and link it; falls back to picking the exe. */
 export function useLocate(id: number, onDone?: () => void) {
   const { linkFolder, addTarget } = useLocalActions(id);
+  const os = useOs();
   const pickExe = async () => {
     const picked = await openDialog({
       multiple: false,
-      title: "Choose the game's executable",
-      filters: [{ name: "Games", extensions: ["exe", "html", "htm", "bat", "lnk"] }],
+      title: "Choose the game's program",
+      // Linux game binaries often have no extension, so allow any file there.
+      filters: [{ name: "Games", extensions: os.platform === "linux" ? [...os.pickExtensions, "*"] : os.pickExtensions }],
     });
     if (typeof picked === "string") addTarget.mutate(picked, { onSuccess: onDone });
   };
@@ -33,7 +36,7 @@ export function useLocate(id: number, onDone?: () => void) {
     } catch (e) {
       toast.error("No game found in that folder", {
         description: friendlyError(e).detail,
-        action: { label: "Pick the .exe", onClick: () => void pickExe() },
+        action: { label: "Pick the program", onClick: () => void pickExe() },
       });
     }
   };
@@ -48,6 +51,7 @@ export function FilesPanel({ id, local, latest }: { id: number; local: LocalGame
   const play = usePlay();
   const running = useRunning();
   const locate = useLocate(id);
+  const os = useOs();
   const [version, setVersion] = useState(local?.installed_version ?? "");
   useEffect(() => setVersion(local?.installed_version ?? ""), [local?.installed_version]);
 
@@ -72,7 +76,7 @@ export function FilesPanel({ id, local, latest }: { id: number; local: LocalGame
             <FolderOpen /> Choose game folder
           </Button>
           <Button variant="ghost" onClick={locate.pickExe}>
-            Pick the .exe instead
+            Pick the program instead
           </Button>
         </div>
       </div>
@@ -180,7 +184,7 @@ export function FilesPanel({ id, local, latest }: { id: number; local: LocalGame
         </div>
       </Section>
 
-      <Section title="Uninstall" description="Removes the game from your library and moves its folder to the Recycle Bin.">
+      <Section title="Uninstall" description={`Removes the game from your library and moves its folder to the ${os.trash}.`}>
         <Button
           variant="danger"
           disabled={isRunning}
@@ -324,7 +328,7 @@ export function NotesPanel({ id, local, latest }: { id: number; local: LocalGame
         </div>
       </Section>
 
-      <Section title="Notes" description={saved ? "Saved on this PC." : "Saving…"}>
+      <Section title="Notes" description={saved ? "Saved on this computer." : "Saving…"}>
         <textarea
           value={notes}
           onChange={(e) => onNotes(e.target.value)}

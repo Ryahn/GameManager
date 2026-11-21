@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Section } from "@/components/ui/primitives";
 import { api, type ApiError, type HostAccounts as Accounts } from "@/lib/ipc";
 import { friendlyError } from "@/lib/errors";
+import { useOs } from "@/lib/platform";
 
 const KEY = ["host-accounts"] as const;
 
@@ -27,6 +28,7 @@ function Connected({ who, onRemove, busy, label }: { who: string; onRemove: () =
 
 export function HostAccounts() {
   const qc = useQueryClient();
+  const os = useOs();
   const accounts = useQuery({ queryKey: KEY, queryFn: api.hostAccounts, staleTime: Infinity });
   const [pdKey, setPdKey] = useState("");
   const [gfToken, setGfToken] = useState("");
@@ -62,7 +64,7 @@ export function HostAccounts() {
   return (
     <Section
       title="File host accounts"
-      description="Optional. With your own accounts, these hosts download inside the app with fewer captchas and bigger quotas. Other hosts open in the F95 window, where the app picks up the file. Keys and sessions are stored in Windows Credential Manager."
+      description={`Optional. With your own accounts, these hosts download inside the app with fewer captchas and bigger quotas. Other hosts open in the F95 window, where the app picks up the file. Keys and sessions are stored in ${os.keychain}.`}
     >
       <div className="space-y-5">
         <div>

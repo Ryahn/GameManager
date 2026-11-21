@@ -10,6 +10,7 @@ import { friendlyError } from "@/lib/errors";
 import { cn } from "@/lib/utils";
 import { HostAccounts } from "./HostAccounts";
 import { SystemSettings } from "./SystemSettings";
+import { useOs } from "@/lib/platform";
 
 const ACCENTS = ["violet", "blue", "teal", "amber", "rose"] as const;
 const ACCENT_SWATCH: Record<(typeof ACCENTS)[number], string> = {
@@ -39,6 +40,7 @@ export function SettingsPage() {
   const update = useUpdateSettings();
   const qc = useQueryClient();
   const f95 = useF95Status();
+  const os = useOs();
   const checkF95 = useCheckF95();
   const s = settings.data;
   if (!s) return null;
@@ -74,7 +76,7 @@ export function SettingsPage() {
             <div className="min-w-0 flex-1">
               <p className="font-medium">{auth.data?.username ?? (auth.data?.mode === "api_key" ? "Signed in with an API key" : "Signed in")}</p>
               <p className="text-sm text-muted">
-                {auth.data?.mode === "sso" ? "Signed in with F95 single sign-on" : "Key stored in Windows Credential Manager"}
+                {auth.data?.mode === "sso" ? "Signed in with F95 single sign-on" : `Key stored in ${os.keychain}`}
               </p>
             </div>
             <Button variant="danger" onClick={signOut}>
@@ -191,7 +193,7 @@ export function SettingsPage() {
           <Row label="Keep running in the tray" hint="Closing the window keeps update checks and playtime tracking going. Quit from the tray icon.">
             <Switch label="Keep running in the tray" checked={s.close_to_tray} onChange={(close_to_tray) => set({ close_to_tray })} />
           </Row>
-          <Row label="Update notifications" hint="A Windows notification when games in your library get a new version. Checked every 30 minutes.">
+          <Row label="Update notifications" hint="A desktop notification when games in your library get a new version. Checked every 30 minutes.">
             <Switch label="Update notifications" checked={s.notify_updates} onChange={(notify_updates) => set({ notify_updates })} />
           </Row>
         </Section>

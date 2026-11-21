@@ -50,11 +50,29 @@ pub struct ImportSummary {
 }
 
 /// `%APPDATA%\f95checker\db.sqlite3`
+/// (On macOS: `~/Library/Application Support/f95checker`; on Linux:
+/// `$XDG_CONFIG_HOME/f95checker`, default `~/.config/f95checker`.)
 pub fn default_path() -> Option<PathBuf> {
-    let p = PathBuf::from(std::env::var_os("APPDATA")?)
-        .join("f95checker")
-        .join("db.sqlite3");
+    let dir = if cfg!(windows) {
+        PathBuf::from(std::env::var_os("APPDATA")?)
+    } else if cfg!(target_os = "macos") {
+        PathBuf::from(std::env::var_os("HOME")?).join("Library/Application Support")
+    } else {
+        std::env::var_os("XDG_CONFIG_HOME")
+            .map(PathBuf::from)
+            .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))?
+    };
+    let p = dir.join("f95checker").join("db.sqlite3");
     p.is_file().then_some(p)
+}
+
+/// F95Checker's OS key in per-OS settings (Windows 1, Linux 2, macOS 3).
+fn os_key() -> &'static str {
+    match crate::platform::os() {
+        "windows" => "1",
+        "linux" => "2",
+        _ => "3",
+    }
 }
 
 fn version_flag(v: &str, current: &str) -> Option<String> {
@@ -90,7 +108,7 @@ pub fn read(path: &Path) -> Result<(Vec<CheckerGame>, usize), String> {
             match v {
                 serde_json::Value::String(s) => Some(s),
                 serde_json::Value::Object(m) => m
-                    .get("1")
+                    .get(os_key())
                     .or_else(|| m.get(""))
                     .and_then(|s| s.as_str())
                     .map(str::to_string),
@@ -292,7 +310,9 @@ mod tests {
         let base = dir.join("Games");
         std::fs::create_dir_all(base.join("Haven")).unwrap();
         std::fs::write(base.join("Haven").join("Haven.exe"), b"x").unwrap();
-        let base_json = serde_json::json!({ "1": base.to_string_lossy() }).to_string();
+        let mut by_os = serde_json::Map::new();
+        by_os.insert(os_key().to_string(), base.to_string_lossy().into());
+        let base_json = serde_json::Value::Object(by_os).to_string();
         c.execute_batch(
             "CREATE TABLE settings (_ INTEGER PRIMARY KEY CHECK (_=0), default_exe_dir TEXT DEFAULT '{}');
              CREATE TABLE labels (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT DEFAULT '', color TEXT, position INTEGER);

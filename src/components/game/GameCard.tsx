@@ -20,7 +20,7 @@ export interface GameCardData {
   rating?: number | null;
   /** Local state, when known. */
   installed?: boolean;
-  /** Installed on this PC but not in the server library (no update checks). */
+  /** Installed on this computer but not in the server library (no update checks). */
   untracked?: boolean;
   playStatus?: PlayStatus;
 }
@@ -78,7 +78,7 @@ export const GameCard = memo(function GameCard({
           {game.hasUpdate && <Badge tone="accent" className="bg-accent text-accent-fg">Update</Badge>}
           {game.isNew && <Badge tone="solid">New</Badge>}
           {game.untracked && (
-            <Badge tone="solid" title="Installed on this PC, but not tracked for updates. Add it to your library to track it.">
+            <Badge tone="solid" title="Installed on this computer, but not tracked for updates. Add it to your library to track it.">
               Not tracked
             </Badge>
           )}

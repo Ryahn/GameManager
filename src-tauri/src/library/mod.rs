@@ -129,8 +129,7 @@ pub fn scan(root: &Path, linked: &[(i64, String, bool)]) -> Vec<ScanFolder> {
 }
 
 pub fn same_path(a: &str, b: &str) -> bool {
-    let norm = |s: &str| s.replace('/', "\\").trim_end_matches('\\').to_lowercase();
-    norm(a) == norm(b)
+    crate::platform::norm_path(a) == crate::platform::norm_path(b)
 }
 
 /// Picks the best search hit for a folder's title guess.

@@ -140,7 +140,7 @@ export function ScanDialog({ open, onOpenChange }: { open: boolean; onOpenChange
   return (
     <Dialog open={open} onOpenChange={(v) => (step === "scanning" ? undefined : onOpenChange(v))}>
       <DialogContent
-        title="Find games on this PC"
+        title="Find games on this computer"
         description="Scans a folder for installed games and matches them to the catalog. Nothing is moved or changed on disk."
         className="w-[min(94vw,880px)]"
       >

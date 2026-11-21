@@ -35,6 +35,9 @@ pub struct Settings {
     pub gofile_user: Option<String>,
     /// Global shortcut that hides every window, e.g. "Ctrl+Shift+H".
     pub boss_key: Option<String>,
+    /// Linux/macOS: program that runs Windows games (umu-run, wine, …).
+    /// None = detect automatically.
+    pub wine_command: Option<String>,
 }
 
 impl Default for Settings {
@@ -58,6 +61,7 @@ impl Default for Settings {
             mega_email: None,
             gofile_user: None,
             boss_key: None,
+            wine_command: None,
         }
     }
 }
@@ -77,6 +81,8 @@ pub struct SettingsPatch {
     pub notify_updates: Option<bool>,
     pub max_active_downloads: Option<u8>,
     pub delete_archives: Option<bool>,
+    /// Empty string = back to automatic.
+    pub wine_command: Option<String>,
 }
 
 impl Settings {
@@ -116,6 +122,9 @@ impl Settings {
         }
         if let Some(v) = p.delete_archives {
             self.delete_archives = v;
+        }
+        if let Some(v) = p.wine_command {
+            self.wine_command = Some(v.trim().to_string()).filter(|s| !s.is_empty());
         }
     }
 }

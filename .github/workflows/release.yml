@@ -1,0 +1,84 @@
+name: Release
+
+# Push a tag like v0.2.0 to build installers for Windows, macOS and Linux
+# into a draft GitHub release. Publish the draft when it looks right.
+#
+# Repository settings used (none are required for a plain build):
+# - secrets.TAURI_SIGNING_PRIVATE_KEY / TAURI_SIGNING_PRIVATE_KEY_PASSWORD:
+#   signs updates. Never commit these.
+# - vars.F95GM_UPDATER_PUBKEY: the matching public key. When set, the build
+#   makes signed update files plus latest.json, and the app checks this
+#   repository's latest release for updates.
+# - vars.F95GM_OIDC_CLIENT_ID: public Authentik client id (turns on SSO).
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build (${{ matrix.name }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows
+            os: windows-latest
+            args: ''
+          - name: Linux
+            os: ubuntu-22.04
+            args: ''
+          - name: macOS
+            os: macos-latest
+            args: '--target universal-apple-darwin'
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Linux system libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev \
+            libxdo-dev libdbus-1-dev pkg-config build-essential
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ runner.os == 'macOS' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Turn on signed updates (when a public key is configured)
+        if: ${{ vars.F95GM_UPDATER_PUBKEY != '' }}
+        shell: bash
+        run: echo "UPDATER_ARGS=--config src-tauri/tauri.updater.conf.json" >> "$GITHUB_ENV"
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          F95GM_UPDATER_PUBKEY: ${{ vars.F95GM_UPDATER_PUBKEY }}
+          F95GM_UPDATE_URL: ${{ vars.F95GM_UPDATER_PUBKEY != '' && format('https://github.com/{0}/releases/latest/download/latest.json', github.repository) || '' }}
+          F95GM_OIDC_CLIENT_ID: ${{ vars.F95GM_OIDC_CLIENT_ID }}
+        with:
+          tagName: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+          releaseName: F95 Game Manager ${{ github.ref_name }}
+          releaseBody: See the commits since the last release for what changed.
+          releaseDraft: true
+          includeUpdaterJson: ${{ vars.F95GM_UPDATER_PUBKEY != '' }}
+          args: ${{ matrix.args }} ${{ env.UPDATER_ARGS }}
+
+      # Windows code signing (e.g. Azure Trusted Signing) goes here once the
+      # certificate account exists; its credentials belong in secrets only.

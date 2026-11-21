@@ -269,10 +269,6 @@ impl Db {
 
     /// Launch targets that point into `dir` (an old version's folder).
     pub fn remove_targets_under(&self, thread_id: i64, dir: &str) -> DbResult<()> {
-        let prefix = format!(
-            "{}\\",
-            dir.replace('/', "\\").trim_end_matches('\\').to_lowercase()
-        );
         let conn = self.conn();
         let ids: Vec<(i64, String)> = {
             let mut st = conn
@@ -284,7 +280,7 @@ impl Db {
                 .map_err(err)?
         };
         for (id, path) in ids {
-            if path.replace('/', "\\").to_lowercase().starts_with(&prefix) {
+            if crate::platform::is_under(&path, dir) {
                 conn.execute("DELETE FROM launch_targets WHERE id = ?1", [id])
                     .map_err(err)?;
             }
