@@ -323,9 +323,15 @@ mod tests {
     #[test]
     fn removes_only_targets_in_old_folder() {
         let db = Db::in_memory();
-        db.add_target(1, "D:\\Games\\X\\0.1\\X.exe", "x", "").unwrap();
-        db.add_target(1, "D:\\Games\\X\\0.10\\X.exe", "x", "").unwrap();
-        db.remove_targets_under(1, "D:/Games/X/0.1").unwrap();
+        // Paths in this OS's own form (Windows also accepts forward slashes).
+        let (old, new, dir) = if cfg!(windows) {
+            ("D:\\Games\\X\\0.1\\X.exe", "D:\\Games\\X\\0.10\\X.exe", "D:/Games/X/0.1")
+        } else {
+            ("/games/X/0.1/X.sh", "/games/X/0.10/X.sh", "/games/X/0.1/")
+        };
+        db.add_target(1, old, "x", "").unwrap();
+        db.add_target(1, new, "x", "").unwrap();
+        db.remove_targets_under(1, dir).unwrap();
         let t = db.get(1).unwrap().unwrap().targets;
         assert_eq!(t.len(), 1);
         assert!(t[0].path.contains("0.10"));
