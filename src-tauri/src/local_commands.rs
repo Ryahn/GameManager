@@ -137,7 +137,7 @@ pub async fn folder_detect(dir: String) -> Result<Vec<detect::Candidate>, ApiErr
 
 /// Links a game to its folder: remembers the folder, adds the detected
 /// executables (best one as default) and the version if known.
-fn link_folder(db: &Db, id: i64, dir: &str, version: Option<String>) -> Result<usize, String> {
+pub(crate) fn link_folder(db: &Db, id: i64, dir: &str, version: Option<String>) -> Result<usize, String> {
     let found = detect::candidates(Path::new(dir));
     for c in &found {
         db.add_target(id, &c.path, &c.label, "")?;
@@ -272,6 +272,22 @@ async fn run_scan(
             .await
             .map_err(ApiError::internal)?;
 
+    // Installed here but no longer in the library: offer it back as a match.
+    for f in folders.iter_mut().filter(|f| f.linked_thread_id.is_some() && !f.linked_in_library) {
+        let id = f.linked_thread_id.unwrap_or_default();
+        if let Ok(Some(g)) = db.get(id) {
+            let cached = g.cached.unwrap_or_default();
+            f.suggestion = Some(library::MatchSuggestion {
+                thread_id: id,
+                title: if cached.title.is_empty() { format!("Thread {id}") } else { cached.title },
+                creator: cached.creator,
+                cover: cached.cover,
+                confidence: 1.0,
+                confident: true,
+            });
+        }
+    }
+
     let total = folders
         .iter()
         .filter(|f| f.linked_thread_id.is_none())
@@ -372,7 +388,78 @@ pub async fn library_import(
     })
 }
 
+/// Never sends a folder to the Recycle Bin that's a drive root, the games
+/// folder itself or one of its parents.
+fn safe_to_trash(dir: &Path, library: Option<&Path>) -> bool {
+    let depth = dir.components().filter(|c| matches!(c, std::path::Component::Normal(_))).count();
+    if depth < 2 || !dir.is_dir() {
+        return false;
+    }
+    match library {
+        Some(lib) => !lib.starts_with(dir),
+        None => true,
+    }
+}
+
+/// Removes a game from the library: stops tracking it on the server and
+/// forgets its install on this PC. With `delete_files`, its folder goes to
+/// the Recycle Bin (recoverable).
+#[tauri::command]
+pub async fn library_remove(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    db: State<'_, Arc<Db>>,
+    launcher: State<'_, Arc<Launcher>>,
+    id: i64,
+    delete_files: bool,
+) -> Result<(), ApiError> {
+    if launcher.is_running(id) {
+        return Err(invalid("Close the game first."));
+    }
+    // Not bookmarked on the server is fine: removing is the goal.
+    match state.api.remove_bookmark(id).await {
+        Ok(()) | Err(ApiError::NotFound) => {}
+        Err(e) => return Err(e),
+    }
+    let install_dir = db.get(id).map_err(internal)?.and_then(|g| g.install_dir);
+    if delete_files
+        && let Some(dir) = install_dir.as_deref() {
+            let library = state.settings.get().await.library_dir;
+            let path = PathBuf::from(dir);
+            if !safe_to_trash(&path, library.as_deref().map(Path::new)) {
+                return Err(invalid(format!(
+                    "For safety, {dir} wasn't deleted. Remove it yourself if you want it gone."
+                )));
+            }
+            tauri::async_runtime::spawn_blocking(move || trash::delete(&path))
+                .await
+                .map_err(ApiError::internal)?
+                .map_err(|e| invalid(format!("Couldn't move the game to the Recycle Bin: {e}")))?;
+        }
+    db.unlink_install(id).map_err(internal)?;
+    crate::tray::refresh(&app);
+    Ok(())
+}
+
 #[tauri::command]
 pub fn sync_now(app: AppHandle) {
     crate::sync::wake(&app);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn never_trashes_roots_or_the_games_folder() {
+        let tmp = std::env::temp_dir().join(format!("f95gm-trash-{}", std::process::id()));
+        let game = tmp.join("Dev").join("Game").join("1.0");
+        std::fs::create_dir_all(&game).unwrap();
+        assert!(safe_to_trash(&game, Some(&tmp)));
+        assert!(!safe_to_trash(&tmp, Some(&tmp)), "the games folder itself");
+        assert!(!safe_to_trash(tmp.parent().unwrap(), Some(&tmp)), "a parent of it");
+        assert!(!safe_to_trash(Path::new("C:\\"), None), "a drive root");
+        assert!(!safe_to_trash(&tmp.join("missing"), Some(&tmp)));
+        let _ = std::fs::remove_dir_all(tmp);
+    }
 }

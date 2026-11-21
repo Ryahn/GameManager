@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { toast } from "sonner";
 import { api, type Events, type LatestQuery, type LocalGame, type LocalPatch, type SettingsPatch } from "@/lib/ipc";
 import { formatPlaytime } from "@/lib/play";
+import { useUi } from "@/state/ui";
 import { friendlyError } from "@/lib/errors";
 
 export const keys = {
@@ -19,6 +20,9 @@ export const keys = {
   localGame: (id: number) => ["local", id] as const,
   sessions: (id: number) => ["sessions", id] as const,
   running: ["running"] as const,
+  downloads: ["downloads"] as const,
+  f95: ["f95-status"] as const,
+  links: (id: number, version: string) => ["links", id, version] as const,
 };
 
 export const useAppInfo = () => useQuery({ queryKey: keys.appInfo, queryFn: api.appInfo, staleTime: Infinity });
@@ -86,6 +90,13 @@ export function useToggleLibrary() {
     },
     onError: (e) => toast.error(friendlyError(e).title, { description: friendlyError(e).detail }),
   });
+}
+
+/** Card/row handler: adding happens at once, removing asks first. */
+export function useLibraryToggle() {
+  const toggle = useToggleLibrary();
+  return (g: { id: number; title: string }, add: boolean) =>
+    add ? toggle.mutate({ id: g.id, add: true, title: g.title }) : useUi.getState().askRemove({ id: g.id, title: g.title });
 }
 
 export function useAck() {
@@ -184,7 +195,25 @@ export function useBackendEvents() {
       listen<Events["updates-changed"]>("updates-changed", () => {
         qc.invalidateQueries({ queryKey: ["bookmarks"] });
       }),
+      // Progress arrives a few times a second; refetch at most every 400 ms.
+      listen("downloads-changed", () => {
+        if (downloadsTimer) return;
+        downloadsTimer = setTimeout(() => {
+          downloadsTimer = undefined;
+          qc.invalidateQueries({ queryKey: keys.downloads });
+        }, 400);
+      }),
+      listen<Events["game-installed"]>("game-installed", ({ payload }) => {
+        qc.invalidateQueries({ queryKey: keys.local });
+        qc.invalidateQueries({ queryKey: keys.localGame(payload) });
+      }),
+      listen<Events["download-captured"]>("download-captured", ({ payload }) => {
+        toast.success("Added to your downloads", { description: payload });
+        qc.invalidateQueries({ queryKey: keys.downloads });
+      }),
+      listen<Events["f95-status"]>("f95-status", ({ payload }) => qc.setQueryData(keys.f95, payload)),
     ];
+    let downloadsTimer: ReturnType<typeof setTimeout> | undefined;
     return () => unlisten.forEach((p) => p.then((f) => f()));
   }, [qc]);
 }
@@ -204,4 +233,38 @@ export function useUpdateInbox(enabled = true) {
     };
     return { query: q, items: all.filter((b) => !isSkipped(b)), skipped: all.filter(isSkipped) };
   }, [q, local]);
+}
+
+// ---------------------------------------------------------------- downloads
+
+export const useDownloads = () => useQuery({ queryKey: keys.downloads, queryFn: api.downloads, staleTime: 5_000 });
+
+/** Downloads that need attention or are moving, for the sidebar badge. */
+export function useDownloadBadge(): number {
+  const { data } = useDownloads();
+  return data?.jobs.filter((j) => ["needs_you", "downloading", "extracting", "installing", "queued"].includes(j.state)).length ?? 0;
+}
+
+export const useF95Status = () => useQuery({ queryKey: keys.f95, queryFn: () => api.f95Status(false), staleTime: Infinity });
+
+export function useCheckF95() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.f95Status(true),
+    onSuccess: (s) => qc.setQueryData(keys.f95, s),
+    onError: toastError("Couldn't check your F95 sign-in"),
+  });
+}
+
+export function useDownloadAction() {
+  const qc = useQueryClient();
+  const done = () => qc.invalidateQueries({ queryKey: keys.downloads });
+  const onError = toastError("That didn't work");
+  return {
+    pause: useMutation({ mutationFn: api.pauseDownload, onSuccess: done, onError }),
+    resume: useMutation({ mutationFn: api.resumeDownload, onSuccess: done, onError }),
+    remove: useMutation({ mutationFn: api.removeDownload, onSuccess: done, onError }),
+    clear: useMutation({ mutationFn: api.clearFinished, onSuccess: done, onError }),
+    openInBrowser: useMutation({ mutationFn: api.openDownloadInBrowser, onSuccess: done, onError }),
+  };
 }

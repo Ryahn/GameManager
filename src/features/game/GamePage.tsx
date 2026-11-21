@@ -1,15 +1,17 @@
 import { useState } from "react";
 import { useParams, useRouter } from "@tanstack/react-router";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { ArrowLeft, Check, Download, ExternalLink, Eye, Heart, Play, Plus, Star } from "lucide-react";
+import { ArrowLeft, Check, Download, ExternalLink, Eye, Heart, Play, Plus, Star, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge, ErrorPanel, Select, Skeleton, Tooltip } from "@/components/ui/primitives";
 import { Cover } from "@/components/game/GameCard";
 import { BBCode } from "@/components/BBCode";
 import { useLibraryIds, useLocalGame, usePlay, useRunning, useThread, useToggleLibrary, useUpdateLocal } from "@/hooks/queries";
+import { useUi } from "@/state/ui";
 import { PLAY_STATUSES, formatPlaytime, sameVersion } from "@/lib/play";
 import { cleanVersion, cn, imageSrc, statusTone, timeAgo } from "@/lib/utils";
 import { FilesPanel, HistoryPanel, NotesPanel, useLocate } from "./YourGame";
+import { DownloadDialog } from "./DownloadDialog";
 
 type Tab = "overview" | "changelog" | "details" | "files" | "notes" | "history";
 
@@ -34,6 +36,7 @@ export function GamePage() {
   const running = useRunning();
   const play = usePlay();
   const [tab, setTab] = useState<Tab>("overview");
+  const [downloadOpen, setDownloadOpen] = useState(false);
   const locate = useLocate(threadId, () => setTab("files"));
   const [shot, setShot] = useState<string | null>(null);
 
@@ -105,25 +108,45 @@ export function GamePage() {
                 <span className="size-2 animate-pulse rounded-full bg-black/70" /> Playing
               </Button>
             ) : installed ? (
-              <Button variant="primary" size="lg" loading={play.isPending} onClick={() => play.mutate({ id: threadId, title: t.title })}>
-                <Play className="fill-current" /> Play
-              </Button>
-            ) : (
-              <Tooltip content="Downloads arrive in the next update" side="top">
-                <span>
-                  <Button variant="primary" size="lg" disabled>
-                    <Download /> Download
+              <>
+                {behind && (
+                  <Button variant="outline" size="lg" onClick={() => setDownloadOpen(true)}>
+                    <Download /> Update to v{version}
                   </Button>
-                </span>
-              </Tooltip>
+                )}
+                <Button variant="primary" size="lg" loading={play.isPending} onClick={() => play.mutate({ id: threadId, title: t.title })}>
+                  <Play className="fill-current" /> Play
+                </Button>
+              </>
+            ) : (
+              <Button variant="primary" size="lg" onClick={() => setDownloadOpen(true)}>
+                <Download /> Download
+              </Button>
             )}
             <Button
               variant={inLibrary ? "secondary" : "outline"}
               size="lg"
               loading={toggle.isPending}
-              onClick={() => toggle.mutate({ id: threadId, add: !inLibrary, title: t.title })}
+              title={inLibrary ? "Remove from library…" : "Add to library"}
+              className={inLibrary ? "group/lib hover:border-danger/50 hover:bg-danger/15 hover:text-danger" : undefined}
+              onClick={() =>
+                inLibrary
+                  ? useUi.getState().askRemove({ id: threadId, title: t.title })
+                  : toggle.mutate({ id: threadId, add: true, title: t.title })
+              }
             >
-              {inLibrary ? <Check /> : <Plus />} {inLibrary ? "In library" : "Add to library"}
+              {inLibrary ? (
+                <>
+                  <Check className="group-hover/lib:hidden" />
+                  <Trash2 className="hidden group-hover/lib:block" />
+                  <span className="group-hover/lib:hidden">In library</span>
+                  <span className="hidden group-hover/lib:inline">Remove…</span>
+                </>
+              ) : (
+                <>
+                  <Plus /> Add to library
+                </>
+              )}
             </Button>
             <Tooltip content="Open the F95 thread" side="top">
               <Button variant="outline" size="icon" className="size-11" aria-label="Open F95 thread" onClick={() => openUrl(t.url)}>
@@ -152,7 +175,7 @@ export function GamePage() {
             <>
               <span className="text-muted">No</span>
               <button type="button" className="text-accent hover:underline" onClick={locate.pickFolder}>
-                � I have it
+                · I have it
               </button>
             </>
           )}
@@ -282,6 +305,12 @@ export function GamePage() {
         {tab === "notes" && <NotesPanel id={threadId} local={local} latest={t.version} />}
         {tab === "history" && <HistoryPanel id={threadId} local={local} />}
       </div>
+
+      <DownloadDialog
+        open={downloadOpen}
+        onOpenChange={setDownloadOpen}
+        game={{ thread_id: threadId, title: t.title, creator: t.creator || t.developer, version: t.version }}
+      />
 
       {shot && (
         <button type="button" aria-label="Close screenshot" className="fixed inset-0 z-50 grid place-items-center bg-overlay p-10 backdrop-blur" onClick={() => setShot(null)}>

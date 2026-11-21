@@ -2,6 +2,7 @@ import { Outlet, useNavigate } from "@tanstack/react-router";
 import { Search, UserRound } from "lucide-react";
 import { Sidebar } from "./Sidebar";
 import { CommandPalette } from "./CommandPalette";
+import { RemoveGameDialog } from "@/features/library/RemoveGameDialog";
 import { Kbd } from "@/components/ui/primitives";
 import { useAuth, useBackendEvents } from "@/hooks/queries";
 import { useUi } from "@/state/ui";
@@ -54,6 +55,7 @@ export function AppShell() {
         </main>
       </div>
       <CommandPalette />
+      <RemoveGameDialog />
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import { memo, useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { Check, ImageOff, Play, Plus } from "lucide-react";
+import { Check, ImageOff, Play, Plus, X } from "lucide-react";
 import { Badge } from "@/components/ui/primitives";
 import { cn, cleanVersion, imageSrc, statusTone, timeAgo } from "@/lib/utils";
 import type { PlayStatus } from "@/lib/ipc";
@@ -20,6 +20,8 @@ export interface GameCardData {
   rating?: number | null;
   /** Local state, when known. */
   installed?: boolean;
+  /** Installed on this PC but not in the server library (no update checks). */
+  untracked?: boolean;
   playStatus?: PlayStatus;
 }
 
@@ -75,6 +77,11 @@ export const GameCard = memo(function GameCard({
         <div className="absolute left-2 top-2 flex flex-wrap gap-1">
           {game.hasUpdate && <Badge tone="accent" className="bg-accent text-accent-fg">Update</Badge>}
           {game.isNew && <Badge tone="solid">New</Badge>}
+          {game.untracked && (
+            <Badge tone="solid" title="Installed on this PC, but not tracked for updates. Add it to your library to track it.">
+              Not tracked
+            </Badge>
+          )}
           {status && <Badge tone="solid" className={TONE_TEXT[status.tone]}>{status.label}</Badge>}
         </div>
         {onToggleLibrary && (
@@ -82,15 +89,22 @@ export const GameCard = memo(function GameCard({
             type="button"
             onClick={() => onToggleLibrary(!inLibrary)}
             aria-label={inLibrary ? `Remove ${game.title} from library` : `Add ${game.title} to library`}
-            title={inLibrary ? "In your library (click to remove)" : "Add to library"}
+            title={inLibrary ? "Remove from library…" : "Add to library"}
             className={cn(
-              "absolute right-2 top-2 z-[2] grid size-8 place-items-center rounded-full border backdrop-blur-sm transition-all",
+              "group/lib absolute right-2 top-2 z-[2] grid size-8 place-items-center rounded-full border backdrop-blur-sm transition-all",
               inLibrary
-                ? "border-accent/60 bg-accent text-accent-fg"
+                ? "border-accent/60 bg-accent text-accent-fg hover:border-danger hover:bg-danger hover:text-white"
                 : "border-white/15 bg-black/55 text-white opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
             )}
           >
-            {inLibrary ? <Check className="size-4" /> : <Plus className="size-4" />}
+            {inLibrary ? (
+              <>
+                <Check className="size-4 group-hover/lib:hidden" />
+                <X className="hidden size-4 group-hover/lib:block" />
+              </>
+            ) : (
+              <Plus className="size-4" />
+            )}
           </button>
         )}
         {running ? (

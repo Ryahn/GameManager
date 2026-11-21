@@ -30,6 +30,11 @@ export interface Settings {
   blur_nsfw: boolean;
   close_to_tray: boolean;
   notify_updates: boolean;
+  max_active_downloads: number;
+  delete_archives: boolean;
+  pixeldrain_user: string | null;
+  mega_email: string | null;
+  gofile_user: string | null;
 }
 
 export type SettingsPatch = Partial<
@@ -44,6 +49,8 @@ export type SettingsPatch = Partial<
     | "blur_nsfw"
     | "close_to_tray"
     | "notify_updates"
+    | "max_active_downloads"
+    | "delete_archives"
   >
 >;
 
@@ -213,6 +220,8 @@ export interface ScanFolder {
   engine: Engine;
   targets: Candidate[];
   linked_thread_id: number | null;
+  /** Linked here AND in the library: nothing to do for this folder. */
+  linked_in_library: boolean;
   suggestion: MatchSuggestion | null;
 }
 
@@ -228,12 +237,108 @@ export interface ImportItem {
   version: string | null;
 }
 
+// ---------------------------------------------------------------- downloads
+
+export interface GameCtx {
+  thread_id: number;
+  title: string;
+  creator: string;
+  version: string;
+}
+
+export interface DownloadLink {
+  host: string;
+  url: string;
+  label: string;
+  /** F95-masked: needs the user to pass a captcha in the F95 window. */
+  masked: boolean;
+  /** Rust's decision: the app downloads it (true) or the F95 window does. */
+  in_app: boolean;
+}
+
+export interface LinkGroup {
+  label: string;
+  os: ("windows" | "linux" | "mac" | "android")[];
+  links: DownloadLink[];
+}
+
+export interface ThreadLinks {
+  thread_id: number;
+  version: string;
+  fetched_at: number;
+  from_cache: boolean;
+  groups: LinkGroup[];
+}
+
+export interface F95Status {
+  checked_at: number;
+  logged_in: boolean;
+  username: string | null;
+}
+
+export interface Preflight {
+  queued: number;
+  adding: number;
+  daily: number;
+  warn: boolean;
+  needs_confirm: boolean;
+  eta_secs: number;
+}
+
+export type JobState = "queued" | "downloading" | "extracting" | "installing" | "done" | "failed" | "needs_you" | "paused";
+
+export interface DownloadJob {
+  id: number;
+  thread_id: number | null;
+  title: string;
+  creator: string;
+  version: string;
+  source: "direct" | "browser";
+  host: string;
+  page_url: string;
+  file_name: string | null;
+  path: string | null;
+  state: JobState;
+  bytes_done: number;
+  bytes_total: number | null;
+  error: string | null;
+  attempts: number;
+  retry_at: number | null;
+  install_dir: string | null;
+  created_at: number;
+  finished_at: number | null;
+  /** Queued jobs: when pacing lets this one start. */
+  starts_at: number | null;
+}
+
+export interface DownloadSnapshot {
+  jobs: DownloadJob[];
+  daily: number;
+  daily_limit: number;
+  paused_for_game: boolean;
+  max_active: number;
+}
+
 /** Events pushed from Rust. */
 export interface Events {
   "game-running": { thread_id: number; running: boolean; secs: number | null };
   "updates-changed": { count: number };
   "scan-progress": ScanProgress;
+  "downloads-changed": null;
+  "download-captured": string;
+  "game-installed": number;
+  "f95-status": F95Status | null;
 }
+
+/** Signed-in file-host accounts (display names only). */
+export interface HostAccounts {
+  pixeldrain: string | null;
+  mega: string | null;
+  gofile: string | null;
+}
+
+/** Typed by the user to go past the daily download limit. */
+export const CONFIRM_PHRASE = "download anyway";
 
 export type ApiError =
   | { kind: "not_signed_in" }
@@ -244,7 +349,9 @@ export type ApiError =
   | { kind: "network"; message: string }
   | { kind: "server"; status: number; message: string }
   | { kind: "invalid"; message: string }
-  | { kind: "internal"; message: string };
+  | { kind: "internal"; message: string }
+  | { kind: "needs_browser"; reason: "login" | "challenge" | string; url: string }
+  | { kind: "confirm_required"; daily: number; limit: number };
 
 export const api = {
   appInfo: () => invoke<AppInfo>("app_info"),
@@ -286,4 +393,32 @@ export const api = {
   importScan: (items: ImportItem[]) =>
     invoke<{ linked: number; added_to_library: number; failed: string[] }>("library_import", { items }),
   syncNow: () => invoke<void>("sync_now"),
+  removeGame: (id: number, deleteFiles: boolean) => invoke<void>("library_remove", { id, deleteFiles }),
+
+  f95Status: (force = false) => invoke<F95Status | null>("f95_status", { force }),
+  f95Open: (url?: string) => invoke<void>("f95_open", { url: url ?? null }),
+  links: (threadId: number, version: string, force = false) => invoke<ThreadLinks>("links_get", { threadId, version, force }),
+  preflight: (hosts: string[]) => invoke<Preflight>("download_preflight", { hosts }),
+  startDownload: (game: GameCtx, link: DownloadLink, confirm?: string) =>
+    invoke<{ job_id: number | null; opened_browser: boolean }>("download_start", { game, link, confirm: confirm ?? null }),
+  downloads: () => invoke<DownloadSnapshot>("downloads_list"),
+  pauseDownload: (id: number) => invoke<void>("download_pause", { id }),
+  resumeDownload: (id: number) => invoke<void>("download_resume", { id }),
+  removeDownload: (id: number) => invoke<void>("download_remove", { id }),
+  clearFinished: () => invoke<void>("downloads_clear_finished"),
+  openDownloadFolder: (id: number) => invoke<void>("download_open_folder", { id }),
+  openDownloadInBrowser: (id: number) => invoke<void>("download_open_in_browser", { id }),
+
+  hostAccounts: () => invoke<HostAccounts>("host_accounts"),
+  setPixeldrainKey: (key: string) => invoke<HostAccounts>("pixeldrain_set_key", { key }),
+  clearPixeldrain: () => invoke<HostAccounts>("pixeldrain_clear"),
+  megaSignIn: (email: string, password: string, mfa?: string) =>
+    invoke<HostAccounts>("mega_sign_in", { email, password, mfa: mfa ?? null }),
+  megaSignOut: () => invoke<HostAccounts>("mega_sign_out"),
+  setGofileToken: (token: string) => invoke<HostAccounts>("gofile_set_token", { token }),
+  clearGofile: () => invoke<HostAccounts>("gofile_clear"),
+
+  jdownloaderStatus: () => invoke<boolean>("jdownloader_status"),
+  sendToJDownloader: (game: GameCtx, link: DownloadLink, confirm?: string) =>
+    invoke<void>("jdownloader_send", { game, link, confirm: confirm ?? null }),
 };

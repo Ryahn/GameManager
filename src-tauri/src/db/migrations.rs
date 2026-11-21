@@ -58,6 +58,36 @@ const MIGRATIONS: &[&str] = &[
         notified_at INTEGER NOT NULL,
         PRIMARY KEY (thread_id, version)
      );",
+    // v2: downloads
+    "CREATE TABLE thread_links (
+        thread_id  INTEGER PRIMARY KEY,
+        version    TEXT NOT NULL,
+        fetched_at INTEGER NOT NULL,
+        groups     TEXT NOT NULL
+     );
+     CREATE TABLE download_jobs (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        thread_id   INTEGER,
+        title       TEXT NOT NULL DEFAULT '',
+        creator     TEXT NOT NULL DEFAULT '',
+        version     TEXT NOT NULL DEFAULT '',
+        source      TEXT NOT NULL,
+        host        TEXT NOT NULL DEFAULT '',
+        page_url    TEXT NOT NULL DEFAULT '',
+        file_name   TEXT,
+        path        TEXT,
+        state       TEXT NOT NULL,
+        bytes_done  INTEGER NOT NULL DEFAULT 0,
+        bytes_total INTEGER,
+        error       TEXT,
+        attempts    INTEGER NOT NULL DEFAULT 0,
+        retry_at    INTEGER,
+        install_dir TEXT,
+        created_at  INTEGER NOT NULL,
+        finished_at INTEGER
+     );
+     CREATE TABLE download_log (started_at INTEGER NOT NULL);
+     CREATE INDEX download_log_time ON download_log(started_at);",
 ];
 
 pub fn run(conn: &mut Connection, path: Option<&Path>) -> Result<(), String> {

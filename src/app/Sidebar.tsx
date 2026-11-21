@@ -1,7 +1,7 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import { Compass, Download, Home, Library, PanelLeftClose, PanelLeftOpen, RefreshCcw, Settings, type LucideIcon } from "lucide-react";
 import { Tooltip } from "@/components/ui/primitives";
-import { useAuth, useUpdateInbox } from "@/hooks/queries";
+import { useAuth, useDownloadBadge, useUpdateInbox } from "@/hooks/queries";
 import { useUi } from "@/state/ui";
 import { cn } from "@/lib/utils";
 
@@ -35,13 +35,14 @@ export function Sidebar() {
   const auth = useAuth();
   const signedIn = auth.data?.signed_in ?? false;
   const updateCount = useUpdateInbox(signedIn).items.length;
+  const downloadCount = useDownloadBadge();
 
   const items: NavItem[] = [
     { to: "/", label: "Home", icon: Home },
     { to: "/library", label: "Library", icon: Library },
     { to: "/discover", label: "Discover", icon: Compass },
     { to: "/updates", label: "Updates", icon: RefreshCcw, badge: updateCount },
-    { to: "/downloads", label: "Downloads", icon: Download },
+    { to: "/downloads", label: "Downloads", icon: Download, badge: downloadCount },
   ];
 
   const isActive = (to: string) => (to === "/" ? pathname === "/" : pathname.startsWith(to));

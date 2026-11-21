@@ -3,7 +3,12 @@ mod auth;
 mod commands;
 mod config;
 mod db;
+mod download_commands;
+mod downloads;
+mod f95;
+mod host_accounts;
 mod images;
+mod install;
 mod launch;
 mod library;
 mod limiter;
@@ -52,6 +57,8 @@ pub fn run() {
             let api = Arc::new(ApiClient::new(config::API_BASE));
             let settings = Arc::new(SettingsStore::load(data_dir.clone()));
             let db = Arc::new(db::Db::open(&data_dir)?);
+            let db_for_downloads = db.clone();
+            let settings_for_downloads = settings.clone();
 
             // Restore the previous session before the UI asks for auth status.
             // This only reads the keyring; no network.
@@ -63,6 +70,10 @@ pub fn run() {
             app.manage(Arc::new(launch::Launcher::default()));
             app.manage(Arc::new(sync::UpdateChecker::default()));
             app.manage(Arc::new(local_commands::ScanState::default()));
+            let downloads = downloads::Downloads::load(&db_for_downloads);
+            downloads.set_library(tauri::async_runtime::block_on(settings_for_downloads.get()).library_dir);
+            app.manage(Arc::new(downloads));
+            app.manage(Arc::new(f95::F95::default()));
             app.manage(AppState {
                 api,
                 http,
@@ -71,6 +82,7 @@ pub fn run() {
 
             tray::init(app.handle())?;
             sync::start(app.handle().clone());
+            downloads::start(app.handle().clone());
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -133,6 +145,28 @@ pub fn run() {
             local_commands::library_scan_cancel,
             local_commands::library_import,
             local_commands::sync_now,
+            local_commands::library_remove,
+            download_commands::f95_status,
+            download_commands::f95_open,
+            download_commands::links_get,
+            download_commands::download_preflight,
+            download_commands::download_start,
+            download_commands::downloads_list,
+            download_commands::download_pause,
+            download_commands::download_resume,
+            download_commands::download_remove,
+            download_commands::downloads_clear_finished,
+            download_commands::download_open_folder,
+            download_commands::download_open_in_browser,
+            host_accounts::host_accounts,
+            host_accounts::pixeldrain_set_key,
+            host_accounts::pixeldrain_clear,
+            host_accounts::mega_sign_in,
+            host_accounts::mega_sign_out,
+            host_accounts::gofile_set_token,
+            host_accounts::gofile_clear,
+            download_commands::jdownloader_status,
+            download_commands::jdownloader_send,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge, Input, Section, Tooltip } from "@/components/ui/primitives";
 import { useLocalActions, useLocalLibrary, usePlay, useRunning, useSessions, useUpdateLocal } from "@/hooks/queries";
+import { useUi } from "@/state/ui";
 import { api, type LocalGame } from "@/lib/ipc";
 import { friendlyError } from "@/lib/errors";
 import { formatPlaytime, sameVersion } from "@/lib/play";
@@ -177,6 +178,16 @@ export function FilesPanel({ id, local, latest }: { id: number; local: LocalGame
             <p className="mt-1.5 text-[12.5px] text-faint">Used to tell you when your copy is behind the latest release.</p>
           </div>
         </div>
+      </Section>
+
+      <Section title="Uninstall" description="Removes the game from your library and moves its folder to the Recycle Bin.">
+        <Button
+          variant="danger"
+          disabled={isRunning}
+          onClick={() => useUi.getState().askRemove({ id, title: local?.cached?.title ?? "this game", deleteFiles: true })}
+        >
+          <Trash2 /> Uninstall…
+        </Button>
       </Section>
     </div>
   );

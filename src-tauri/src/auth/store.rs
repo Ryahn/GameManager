@@ -5,6 +5,12 @@ use crate::config::KEYRING_SERVICE;
 
 pub const API_KEY: &str = "api_key";
 pub const REFRESH_TOKEN: &str = "sso_refresh_token";
+/// The user's own Pixeldrain API key.
+pub const PIXELDRAIN_KEY: &str = "pixeldrain_api_key";
+/// A MEGA session (the password itself is never stored).
+pub const MEGA_SESSION: &str = "mega_session";
+/// The user's own Gofile (Premium) account token.
+pub const GOFILE_TOKEN: &str = "gofile_token";
 
 fn entry(name: &str) -> Result<keyring::Entry, String> {
     keyring::Entry::new(KEYRING_SERVICE, name).map_err(|e| e.to_string())

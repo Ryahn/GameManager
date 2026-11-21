@@ -49,5 +49,14 @@ export function friendlyError(e: unknown): FriendlyError {
       return { title: "That didn't look right", detail: e.message };
     case "internal":
       return { title: "Something went wrong", detail: e.message, action: "retry" };
+    case "needs_browser":
+      return e.reason === "challenge"
+        ? { title: "F95 wants to check you're human", detail: "Complete the check in the F95 window, then try again." }
+        : { title: "Sign in to F95 first", detail: "Download links are only shown to signed-in members. Sign in in the F95 window, then try again." };
+    case "confirm_required":
+      return {
+        title: "That's a lot of downloads today",
+        detail: `You've started ${e.daily} in the last 24 hours. Type the confirmation to continue.`,
+      };
   }
 }

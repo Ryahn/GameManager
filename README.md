@@ -37,7 +37,27 @@ React UI ──invoke()──▶ Rust commands ──▶ f95api.xyz          (ca
 - **Your library lives on the server as bookmarks.** The server checks them every 30 minutes, including stealth updates. `GET /v1/bookmarks?updated_only=true` is the Updates inbox, and "Mark seen" calls `/ack`.
 - **Your copy of each game lives in a local SQLite database** (`library.db` in the app data folder). It stores the install folder, launch targets, playtime, notes, labels, rating and play status, plus a cached copy of the catalog fields so the library opens offline. The database is copied aside before any schema migration, and the last three copies are kept.
 - **Background update checks** read the small `updated_only` inbox every 30 minutes in the limiter's background lane. That's about two requests an hour, and each new version triggers one Windows notification.
-- **Download links never come from the API.** They're for approved partners only. In Phase 2 the launcher will read them from the F95 thread on the user's machine, using the user's own F95 session in a built-in browser window, with strict pacing.
+- **Download links never come from the API.** They're for approved partners only. The launcher reads them from the thread's first post on the user's machine, with the user's own F95 sign-in in a built-in browser window:
+  - A hidden window loads the thread and a parser (`src-tauri/src/f95/op_parser.js`) reads the DOWNLOAD section. Only one thread is read at a time, about 5 s apart. Pages are only read when the user presses Download, and links are cached per version.
+  - F95 windows aren't in any capability, so F95 pages can't call the app. The launcher never sees the F95 password.
+  - Masked links, captchas, Cloudflare checks and hosts without a public API open in the visible F95 window, for the user to click through. Whatever they download there is picked up, installed and attributed to the game.
+- **Downloads** (`src-tauri/src/downloads/`):
+  - The defaults are 2 at a time, 1 per host, and 30-60 s between starts on a host.
+  - A host that returns 429 or 403 is left alone for 15 min, then 30, 60 and 120.
+  - Downloads stop while a game runs and resume from `.part` files.
+  - Queueing 5 or more shows a warning. More than 15 starts in 24 hours needs the user to type "download anyway". These limits are enforced in Rust.
+  - Hosts the app downloads itself, using only documented APIs:
+    - Pixeldrain, with your own API key if you add one.
+    - MEGA, decrypted locally and signed in optionally (only the session is stored).
+    - Gofile, only with your own Premium token. Gofile's API is Premium-only.
+    - Direct archive links.
+  - Every other approved host opens in the F95 window, where you press the host's own download button and the app picks up the file. As of November 2026, none of them documented a way for apps to download someone else's file.
+  - Optional **Send to JDownloader** hands a link to your own running JDownloader through its Click'n'Load listener (`127.0.0.1:9666/flash/add`).
+- **Install** (`src-tauri/src/install.rs`):
+  - zip, 7z and rar are unpacked with Rust libraries, so no 7-Zip program ships.
+  - Archives are unpacked into a staging folder, and entries that would land outside it (`..`, absolute paths, symlinks) are skipped.
+  - The game is moved to `{games folder}/{creator}/{title}/{version}`.
+  - Ren'Py and RPG Maker saves are copied from the previous version, and the old launch targets are swapped for the new ones. The old version's folder is kept.
 
 | Path | What it does |
 | --- | --- |
@@ -93,6 +113,6 @@ SSO stays hidden until a client id is compiled in. To set it up:
 
 - [x] **Phase 0:** shell and design system, onboarding, API key + SSO sign-in, API client and limiter, Home / Discover / Library / Updates / Game / Settings
 - [x] **Phase 1:** local SQLite library (installed, finished and played versions, notes, labels, rating, play status), launching and playtime, folder scan with catalog matching, board view, skip-a-version, background update checks, tray and notifications, offline library
-- [ ] **Phase 2:** F95 session webview, reading links from the thread's first post (one request at a time, at least 5 s apart), download queue (2 active, 1 per host, 45 s ± 15 s between starts on a host), mass-download warnings (5+ queued, 15+ per day), extract and install, updates that keep saves
+- [x] **Phase 2:** F95 session window, first-post link reader with a per-version cache, download queue and anti-ban limits, mass-download warning and typed confirm, Pixeldrain and direct links, browser-window capture for everything else, unpack and install, updates that keep saves. *Still needs end-to-end testing with a real F95 account.*
 - [ ] **Phase 3:** start with Windows, F95Checker import, `f95gm://` deep links, browser extension, boss key and PIN, signed auto-updater and code signing
 - [ ] **Phase 4:** macOS, Linux and Steam Deck

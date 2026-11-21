@@ -93,7 +93,7 @@ export function ScanDialog({ open, onOpenChange }: { open: boolean; onOpenChange
         found.map((f) => ({
           folder: f,
           match: f.suggestion,
-          selected: !f.linked_thread_id && !!f.suggestion?.confident,
+          selected: !(f.linked_thread_id && f.linked_in_library) && !!f.suggestion?.confident,
         })),
       );
       setStep("review");
@@ -111,7 +111,7 @@ export function ScanDialog({ open, onOpenChange }: { open: boolean; onOpenChange
   const update = (path: string, patch: Partial<Row>) => setRows((rs) => rs.map((r) => (r.folder.path === path ? { ...r, ...patch } : r)));
 
   const selected = rows.filter((r) => r.selected && r.match);
-  const newRows = rows.filter((r) => !r.folder.linked_thread_id);
+  const newRows = rows.filter((r) => !(r.folder.linked_thread_id && r.folder.linked_in_library));
   const linkedCount = rows.length - newRows.length;
   const unmatched = newRows.filter((r) => !r.match).length;
 
@@ -205,7 +205,10 @@ export function ScanDialog({ open, onOpenChange }: { open: boolean; onOpenChange
               </p>
               <ul className="max-h-[52vh] space-y-2 overflow-y-auto pr-1">
                 {rows.map(({ folder: f, match, selected: sel }) => {
-                  const linked = !!f.linked_thread_id;
+                  // Linked here and in the library: nothing to do. Linked but
+                  // removed from the library: offered again, pre-ticked.
+                  const linked = !!f.linked_thread_id && f.linked_in_library;
+                  const removed = !!f.linked_thread_id && !f.linked_in_library;
                   return (
                     <li key={f.path} className={cn("rounded-xl border border-border bg-surface-2/60 p-3", linked && "opacity-55")}>
                       <div className="flex items-center gap-3">
@@ -237,7 +240,11 @@ export function ScanDialog({ open, onOpenChange }: { open: boolean; onOpenChange
                                 <p className="truncate text-sm">{match.title}</p>
                                 <p className="truncate text-[12px] text-faint">{match.creator}</p>
                               </div>
-                              {!match.confident && <Badge tone="warning">Check this</Badge>}
+                              {removed ? (
+                                <Badge title="Installed here, but you removed it from your library">Not in library</Badge>
+                              ) : (
+                                !match.confident && <Badge tone="warning">Check this</Badge>
+                              )}
                             </>
                           ) : (
                             <span className="flex-1 text-[13px] text-faint">No match found</span>

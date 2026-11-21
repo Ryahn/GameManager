@@ -1,13 +1,14 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
-import { FolderOpen, KeyRound, LogOut, Moon, Monitor, Sun, UserRound } from "lucide-react";
+import { ExternalLink, FolderOpen, Globe, KeyRound, LogOut, Moon, Monitor, RefreshCw, Sun, UserRound } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { PageHeader, Section, Segmented, Switch } from "@/components/ui/primitives";
-import { keys, useAppInfo, useAuth, useSettings, useUpdateSettings } from "@/hooks/queries";
+import { keys, useAppInfo, useAuth, useCheckF95, useF95Status, useSettings, useUpdateSettings } from "@/hooks/queries";
 import { api, type Settings } from "@/lib/ipc";
 import { friendlyError } from "@/lib/errors";
 import { cn } from "@/lib/utils";
+import { HostAccounts } from "./HostAccounts";
 
 const ACCENTS = ["violet", "blue", "teal", "amber", "rose"] as const;
 const ACCENT_SWATCH: Record<(typeof ACCENTS)[number], string> = {
@@ -36,6 +37,8 @@ export function SettingsPage() {
   const info = useAppInfo();
   const update = useUpdateSettings();
   const qc = useQueryClient();
+  const f95 = useF95Status();
+  const checkF95 = useCheckF95();
   const s = settings.data;
   if (!s) return null;
 
@@ -89,6 +92,53 @@ export function SettingsPage() {
             </Button>
           </div>
         </Section>
+
+        <Section
+          title="F95 account"
+          description="Download links are read from threads with your own F95 sign-in, in a built-in browser window. The launcher never sees your F95 password."
+        >
+          <div className="flex items-center gap-4">
+            <div className="grid size-11 place-items-center rounded-full bg-accent/15 text-accent">
+              <Globe className="size-5" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="font-medium">
+                {f95.data == null
+                  ? "Not checked yet"
+                  : f95.data.logged_in
+                    ? `Signed in${f95.data.username ? ` as ${f95.data.username}` : ""}`
+                    : "Not signed in to F95"}
+              </p>
+              <p className="text-sm text-muted">Sign in once in the F95 window; it remembers you.</p>
+            </div>
+            <Button variant="ghost" onClick={() => checkF95.mutate()} loading={checkF95.isPending}>
+              <RefreshCw /> Check
+            </Button>
+            <Button onClick={() => api.f95Open()}>
+              <ExternalLink /> Open F95 window
+            </Button>
+          </div>
+        </Section>
+
+        <Section title="Downloads" description="Limits that keep your account and IP safe. The spacing between downloads and the daily warning can't be turned off.">
+          <Row label="Downloads at a time" hint="Never more than one from the same file host.">
+            <Segmented
+              label="Downloads at a time"
+              value={String(s.max_active_downloads) as "1" | "2" | "3"}
+              onChange={(v) => set({ max_active_downloads: Number(v) })}
+              options={[
+                { value: "1", label: "1" },
+                { value: "2", label: "2" },
+                { value: "3", label: "3" },
+              ]}
+            />
+          </Row>
+          <Row label="Delete archives after installing" hint="Frees up space. Turn off to keep the zip/rar you downloaded.">
+            <Switch label="Delete archives after installing" checked={s.delete_archives} onChange={(delete_archives) => set({ delete_archives })} />
+          </Row>
+        </Section>
+
+        <HostAccounts />
 
         <Section title="Appearance">
           <Row label="Theme">

@@ -34,6 +34,13 @@ log = "0.4"
 rusqlite = { version = "0.43", features = ["bundled"] }
 sysinfo = { version = "0.40", default-features = false, features = ["system"] }
 regex = "1"
+zip = "9"
+sevenz-rust2 = "0.25"
+unrar = "0.5"
+mega = "0.8"
+futures-io = "0.3"
+tokio-util = { version = "0.7", features = ["compat"] }
+trash = "5"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["test-util", "macros", "rt-multi-thread"] }

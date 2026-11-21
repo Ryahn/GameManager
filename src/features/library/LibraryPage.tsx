@@ -1,13 +1,13 @@
 import { useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { Columns3, Compass, FolderSearch, LayoutGrid, Library, List, Play, Search, WifiOff, X } from "lucide-react";
+import { Columns3, Compass, FolderSearch, LayoutGrid, Library, List, Play, Search, Trash2, WifiOff, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Badge, EmptyState, ErrorPanel, Input, PageHeader, Segmented, Select } from "@/components/ui/primitives";
 import { Cover, GameCard, GameCardSkeleton, GameGrid, type GameCardData } from "@/components/game/GameCard";
 import { fromBookmark, fromLocal, withLocal } from "@/components/game/mappers";
-import { keys, useLibrary, useLocalLibrary, usePlay, useRunning, useToggleLibrary } from "@/hooks/queries";
+import { keys, useLibrary, useLibraryToggle, useLocalLibrary, usePlay, useRunning } from "@/hooks/queries";
 import { useUi } from "@/state/ui";
 import { api, type LocalGame, type PlayStatus } from "@/lib/ipc";
 import { friendlyError } from "@/lib/errors";
@@ -110,7 +110,7 @@ function BoardColumn({
 export function LibraryPage() {
   const library = useLibrary();
   const localQ = useLocalLibrary();
-  const toggle = useToggleLibrary();
+  const toggle = useLibraryToggle();
   const play = usePlay();
   const running = useRunning();
   const qc = useQueryClient();
@@ -131,10 +131,17 @@ export function LibraryPage() {
 
   const all: Entry[] = useMemo(() => {
     if (library.data) {
-      return library.data.items.map((b) => {
+      const tracked = new Set(library.data.items.map((b) => b.thread_id));
+      const fromServer = library.data.items.map((b) => {
         const local = localMap.get(b.thread_id);
         return { card: withLocal(fromBookmark(b), local), local };
       });
+      // Installed on this PC but not in the server library: still listed,
+      // so nothing on disk is ever "missing" from the library.
+      const installedOnly = (localQ.data ?? [])
+        .filter((l) => l.targets.length > 0 && !tracked.has(l.thread_id))
+        .map((l) => ({ card: { ...fromLocal(l), untracked: true }, local: l }));
+      return [...fromServer, ...installedOnly];
     }
     if (offline) return (localQ.data ?? []).filter((g) => g.in_library).map((l) => ({ card: fromLocal(l), local: l }));
     return [];
@@ -335,8 +342,8 @@ export function LibraryPage() {
             <GameCard
               key={e.card.id}
               game={e.card}
-              inLibrary
-              onToggleLibrary={offline ? undefined : (add) => toggle.mutate({ id: e.card.id, add, title: e.card.title })}
+              inLibrary={!e.card.untracked}
+              onToggleLibrary={offline ? undefined : (add) => toggle(e.card, add)}
               onPlay={() => onPlay(e)}
               running={running.data?.has(e.card.id)}
             />
@@ -351,7 +358,7 @@ export function LibraryPage() {
             <span className="w-24 text-right">Played</span>
             <span className="w-32 text-right">Version</span>
             <span className="w-20 text-right">Updated</span>
-            <span className="w-9" />
+            <span className="w-[76px]" />
           </div>
           {entries.map((e, i) => {
             const g = e.card;
@@ -365,6 +372,7 @@ export function LibraryPage() {
                   <p className="flex items-center gap-2 truncate font-medium">
                     <span className="truncate">{g.title}</span>
                     {g.hasUpdate && <Badge tone="accent">Update</Badge>}
+                    {g.untracked && <Badge title="Installed on this PC, but not tracked for updates">Not tracked</Badge>}
                   </p>
                   <p className="truncate text-sm text-muted">{g.creator}</p>
                 </Link>
@@ -385,6 +393,18 @@ export function LibraryPage() {
                   )}
                 </span>
                 <span className="w-20 text-right text-xs text-faint">{timeAgo(g.updatedAt)}</span>
+                {!offline && (
+                  <Button
+                    size="icon-sm"
+                    variant="ghost"
+                    title={g.untracked ? "Remove from this PC's list…" : "Remove from library…"}
+                    aria-label={`Remove ${g.title} from library`}
+                    className="opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+                    onClick={() => toggle(g, false)}
+                  >
+                    <Trash2 />
+                  </Button>
+                )}
                 <span className="grid w-9 place-items-center">
                   {g.installed &&
                     (running.data?.has(g.id) ? (

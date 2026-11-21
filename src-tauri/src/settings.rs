@@ -25,6 +25,14 @@ pub struct Settings {
     pub notify_updates: bool,
     /// Set once the "still running in the tray" notice has been shown.
     pub tray_notice_shown: bool,
+    /// Downloads at once (1-3; capped in `downloads::limits`).
+    pub max_active_downloads: u8,
+    /// Delete the downloaded archive once the game is installed.
+    pub delete_archives: bool,
+    /// Display names for file-host accounts (secrets are in the keyring).
+    pub pixeldrain_user: Option<String>,
+    pub mega_email: Option<String>,
+    pub gofile_user: Option<String>,
 }
 
 impl Default for Settings {
@@ -42,6 +50,11 @@ impl Default for Settings {
             close_to_tray: true,
             notify_updates: true,
             tray_notice_shown: false,
+            max_active_downloads: crate::downloads::limits::DEFAULT_ACTIVE as u8,
+            delete_archives: true,
+            pixeldrain_user: None,
+            mega_email: None,
+            gofile_user: None,
         }
     }
 }
@@ -59,6 +72,8 @@ pub struct SettingsPatch {
     pub blur_nsfw: Option<bool>,
     pub close_to_tray: Option<bool>,
     pub notify_updates: Option<bool>,
+    pub max_active_downloads: Option<u8>,
+    pub delete_archives: Option<bool>,
 }
 
 impl Settings {
@@ -92,6 +107,12 @@ impl Settings {
         }
         if let Some(v) = p.notify_updates {
             self.notify_updates = v;
+        }
+        if let Some(v) = p.max_active_downloads {
+            self.max_active_downloads = v.clamp(1, 3);
+        }
+        if let Some(v) = p.delete_archives {
+            self.delete_archives = v;
         }
     }
 }

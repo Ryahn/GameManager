@@ -18,8 +18,10 @@ pub struct ScanFolder {
     pub version_guess: Option<String>,
     pub engine: Engine,
     pub targets: Vec<Candidate>,
-    /// Already linked to this thread in the local library.
+    /// This folder is already linked to this thread on this PC.
     pub linked_thread_id: Option<i64>,
+    /// …and that game is also in the library (nothing to do).
+    pub linked_in_library: bool,
     /// Best catalog match, if the search found one.
     pub suggestion: Option<MatchSuggestion>,
 }
@@ -61,6 +63,7 @@ fn folder(path: PathBuf, targets: Vec<Candidate>) -> ScanFolder {
         version_guess: version,
         targets,
         linked_thread_id: None,
+        linked_in_library: false,
         suggestion: None,
     }
 }
@@ -85,7 +88,7 @@ fn subdirs(p: &Path) -> Vec<PathBuf> {
 
 /// Lists game folders under `root`. Handles a flat folder of games, a
 /// `Creator/Title` or `Title/Version` layout, or `root` being one game.
-pub fn scan(root: &Path, linked: &[(i64, String)]) -> Vec<ScanFolder> {
+pub fn scan(root: &Path, linked: &[(i64, String, bool)]) -> Vec<ScanFolder> {
     let mut out = Vec::new();
     let here = detect::candidates(root);
     let children = subdirs(root);
@@ -117,10 +120,10 @@ pub fn scan(root: &Path, linked: &[(i64, String)]) -> Vec<ScanFolder> {
         }
     }
     for f in &mut out {
-        f.linked_thread_id = linked
-            .iter()
-            .find(|(_, dir)| same_path(dir, &f.path))
-            .map(|(id, _)| *id);
+        if let Some((id, _, in_library)) = linked.iter().find(|(_, dir, _)| same_path(dir, &f.path)) {
+            f.linked_thread_id = Some(*id);
+            f.linked_in_library = *in_library;
+        }
     }
     out
 }
@@ -170,7 +173,7 @@ mod tests {
         touch(&root.join("Starlight/0.5/Game.exe"));
         fs::create_dir_all(root.join("Empty")).unwrap();
 
-        let linked = vec![(42, root.join("Velvet Dev/Echoes").to_string_lossy().into_owned())];
+        let linked = vec![(42, root.join("Velvet Dev/Echoes").to_string_lossy().into_owned(), true)];
         let found = scan(&root, &linked);
         let titles: Vec<_> = found.iter().map(|f| f.title_guess.as_str()).collect();
         assert_eq!(found.len(), 5, "{titles:?}");
@@ -181,6 +184,7 @@ mod tests {
         assert!(star.iter().any(|f| f.version_guess.as_deref() == Some("0.5")));
         let echoes = found.iter().find(|f| f.title_guess == "Echoes").unwrap();
         assert_eq!(echoes.linked_thread_id, Some(42));
+        assert!(echoes.linked_in_library);
         let _ = fs::remove_dir_all(root);
     }
 

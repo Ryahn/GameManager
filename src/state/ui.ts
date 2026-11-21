@@ -3,7 +3,17 @@ import { persist } from "zustand/middleware";
 
 export type LibraryView = "grid" | "list" | "board";
 
+export interface RemoveTarget {
+  id: number;
+  title: string;
+  /** Pre-tick "also delete the files" (e.g. from Files & launch). */
+  deleteFiles?: boolean;
+}
+
 interface UiState {
+  removeTarget: RemoveTarget | null;
+  askRemove: (t: RemoveTarget) => void;
+  closeRemove: () => void;
   sidebarCollapsed: boolean;
   toggleSidebar: () => void;
   paletteOpen: boolean;
@@ -18,6 +28,9 @@ interface UiState {
 export const useUi = create<UiState>()(
   persist(
     (set) => ({
+      removeTarget: null,
+      askRemove: (removeTarget) => set({ removeTarget }),
+      closeRemove: () => set({ removeTarget: null }),
       sidebarCollapsed: false,
       toggleSidebar: () => set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed })),
       paletteOpen: false,

@@ -72,6 +72,11 @@ let settings = {
   blur_nsfw: false,
   close_to_tray: true,
   notify_updates: true,
+  max_active_downloads: 2,
+  delete_archives: true,
+  pixeldrain_user: null as string | null,
+  mega_email: null as string | null,
+  gofile_user: null as string | null,
 };
 let signedIn = false;
 const library = new Map<number, { has_update: boolean; last_seen_version: string }>([
@@ -190,6 +195,59 @@ const bookmark = (id: number) => {
     review_reason: null,
     thread: toSummary(g),
   };
+};
+
+// ---- downloads
+let f95LoggedIn = false;
+let nextJob = 1;
+let daily = 3;
+type Job = Record<string, any>;
+const jobs: Job[] = [];
+const jobsChanged = () => void emit("downloads-changed", null);
+const linkFixture = (id: number) => [
+  {
+    label: "Win/Linux",
+    os: ["windows", "linux"],
+    links: [
+      { host: "mega.nz", url: `https://f95zone.to/masked/mega.nz/1/${id}`, label: "MEGA", masked: true },
+      { host: "mega.nz", url: `https://mega.nz/file/Ab${id}#k3y${id}`, label: "MEGA (unmasked)", masked: false },
+      { host: "pixeldrain.com", url: `https://pixeldrain.com/u/pd${id}`, label: "PIXELDRAIN", masked: false },
+      { host: "gofile.io", url: `https://gofile.io/d/go${id}`, label: "GOFILE", masked: false },
+      { host: "datanodes.to", url: `https://datanodes.to/dn${id}/Game-${id}-pc.zip`, label: "DATANODES", masked: false },
+    ],
+  },
+  { label: "Mac", os: ["mac"], links: [{ host: "mega.nz", url: `https://f95zone.to/masked/mega.nz/2/${id}`, label: "MEGA", masked: true }] },
+  { label: "Android", os: ["android"], links: [{ host: "pixeldrain.com", url: `https://pixeldrain.com/u/and${id}`, label: "PIXELDRAIN", masked: false }] },
+];
+const runJob = (job: Job) => {
+  const total = 734_003_200;
+  const step = () => {
+    if (!jobs.includes(job) || job.state === "paused") return;
+    if (job.state === "queued") {
+      job.state = "downloading";
+      job.starts_at = null;
+      job.bytes_total = total;
+      daily++;
+    } else if (job.state === "downloading") {
+      job.bytes_done = Math.min(total, job.bytes_done + total / 8);
+      if (job.bytes_done >= total) job.state = "extracting";
+    } else if (job.state === "extracting") job.state = "installing";
+    else if (job.state === "installing") {
+      job.state = "done";
+      job.finished_at = Math.floor(Date.now() / 1000);
+      job.install_dir = `D:\Games\${job.creator}\${job.title}\${job.version.replace(/^v/, "")}`;
+      addTarget(job.thread_id, `${job.install_dir}\Game.exe`);
+      ensure(job.thread_id).install_dir = job.install_dir;
+      ensure(job.thread_id).installed_version = job.version;
+      library.set(job.thread_id, library.get(job.thread_id) ?? { has_update: false, last_seen_version: "" });
+      void emit("game-installed", job.thread_id);
+      jobsChanged();
+      return;
+    }
+    jobsChanged();
+    setTimeout(step, 600);
+  };
+  setTimeout(step, job.starts_at ? Math.max(600, job.starts_at * 1000 - Date.now()) : 900);
 };
 
 const scanFixtures = () => [
@@ -369,9 +427,10 @@ export function installMockIpc() {
             version_guess: f.version,
             engine: "ren_py",
             targets: [{ path: `D:\\Games\\${f.name}\\Game.exe`, label: "Play", engine: "ren_py" }],
-            linked_thread_id: f.linked ? f.match!.id : null,
+            linked_thread_id: f.linked || (f.match && local.get(f.match.id)?.install_dir && !library.has(f.match.id)) ? f.match!.id : null,
+          linked_in_library: !!f.linked && library.has(f.match!.id),
             suggestion:
-              f.match && !f.linked
+              f.match && !(f.linked && library.has(f.match.id))
                 ? { thread_id: f.match.id, title: f.match.name, creator: f.match.authors[0].name, cover: f.match.cover, confidence: f.confident ? 0.95 : 0.6, confident: f.confident }
                 : null,
           }));
@@ -388,6 +447,121 @@ export function installMockIpc() {
           return { linked: args.items.length, added_to_library: args.items.length, failed: [] };
         case "sync_now":
           return null;
+        case "library_remove": {
+          library.delete(args.id);
+          const l = local.get(args.id);
+          if (l) Object.assign(l, { targets: [], install_dir: null, installed_version: null });
+          return null;
+        }
+
+        case "f95_status":
+          return { checked_at: Math.floor(Date.now() / 1000), logged_in: f95LoggedIn, username: f95LoggedIn ? "Tester" : null };
+        case "f95_open":
+          f95LoggedIn = true;
+          void emit("f95-status", { checked_at: Math.floor(Date.now() / 1000), logged_in: true, username: "Tester" });
+          return null;
+        case "links_get":
+          await delay(1200);
+          if (!f95LoggedIn) throw { kind: "needs_browser", reason: "login", url: "https://f95zone.to/login/" };
+          return {
+            thread_id: args.threadId,
+            version: args.version,
+            fetched_at: Math.floor(Date.now() / 1000),
+            from_cache: false,
+            groups: linkFixture(args.threadId).map((g) => ({
+              ...g,
+              links: g.links.map((l) => ({
+                ...l,
+                in_app: !l.masked && (l.host === "pixeldrain.com" || l.host === "mega.nz" || (l.host === "gofile.io" && !!settings.gofile_user)),
+              })),
+            })),
+          };
+        case "download_preflight": {
+          const queued = jobs.filter((j) => j.state === "queued").length;
+          const adding = args.hosts.length;
+          return { queued, adding, daily, warn: queued + adding >= 5, needs_confirm: daily + adding > 15, eta_secs: queued * 45 };
+        }
+        case "download_start": {
+          if (daily + 1 > 15 && String(args.confirm ?? "").trim().toLowerCase() !== "download anyway") throw { kind: "confirm_required", daily, limit: 15 };
+          const link = args.link;
+          const inApp = !link.masked && (link.host === "pixeldrain.com" || link.host === "mega.nz" || (link.host === "gofile.io" && !!settings.gofile_user));
+          if (!inApp) return { job_id: null, opened_browser: true };
+          const busy = jobs.some((j) => j.host === link.host && ["downloading", "queued"].includes(j.state));
+          const job: Job = {
+            id: nextJob++, thread_id: args.game.thread_id, title: args.game.title, creator: args.game.creator, version: args.game.version,
+            source: "direct", host: link.host, page_url: link.url, file_name: `${args.game.title}.zip`, path: null, state: "queued",
+            bytes_done: 0, bytes_total: null, error: null, attempts: 0, retry_at: null, install_dir: null,
+            created_at: Math.floor(Date.now() / 1000), finished_at: null, starts_at: busy ? Math.floor(Date.now() / 1000) + 42 : null,
+          };
+          jobs.unshift(job);
+          runJob(job);
+          jobsChanged();
+          return { job_id: job.id, opened_browser: false };
+        }
+        case "downloads_list":
+          return { jobs: [...jobs], daily, daily_limit: 15, paused_for_game: running.size > 0, max_active: settings.max_active_downloads };
+        case "download_pause": {
+          const j = jobs.find((x) => x.id === args.id);
+          if (j) j.state = "paused";
+          jobsChanged();
+          return null;
+        }
+        case "download_resume": {
+          const j = jobs.find((x) => x.id === args.id);
+          if (j) {
+            j.state = "queued";
+            j.error = null;
+            runJob(j);
+          }
+          jobsChanged();
+          return null;
+        }
+        case "download_remove": {
+          const i = jobs.findIndex((x) => x.id === args.id);
+          if (i >= 0) jobs.splice(i, 1);
+          jobsChanged();
+          return null;
+        }
+        case "downloads_clear_finished":
+          for (let i = jobs.length - 1; i >= 0; i--) if (jobs[i].state === "done") jobs.splice(i, 1);
+          jobsChanged();
+          return null;
+        case "download_open_folder":
+        case "download_open_in_browser":
+          return null;
+
+        case "host_accounts":
+          return { pixeldrain: settings.pixeldrain_user, mega: settings.mega_email, gofile: settings.gofile_user };
+        case "gofile_set_token":
+          await delay(500);
+          if (String(args.token).startsWith("free")) throw { kind: "invalid", message: "This Gofile account isn't Premium. Gofile only lets apps download through its API with a Premium account; without one, Gofile links open in the F95 window." };
+          settings.gofile_user = "me@example.com";
+          return { pixeldrain: settings.pixeldrain_user, mega: settings.mega_email, gofile: settings.gofile_user };
+        case "gofile_clear":
+          settings.gofile_user = null;
+          return { pixeldrain: settings.pixeldrain_user, mega: settings.mega_email, gofile: null };
+        case "jdownloader_status":
+          return true;
+        case "jdownloader_send":
+          await delay(300);
+          daily++;
+          return null;
+        case "pixeldrain_set_key":
+          await delay(500);
+          if (String(args.key).length < 8) throw { kind: "invalid", message: "That doesn't look like a Pixeldrain API key." };
+          settings.pixeldrain_user = "tester";
+          return { pixeldrain: settings.pixeldrain_user, mega: settings.mega_email, gofile: settings.gofile_user };
+        case "pixeldrain_clear":
+          settings.pixeldrain_user = null;
+          return { pixeldrain: null, mega: settings.mega_email, gofile: settings.gofile_user };
+        case "mega_sign_in":
+          await delay(700);
+          if (!args.mfa) throw { kind: "invalid", message: "mfa_required" };
+          settings.mega_email = String(args.email).toLowerCase();
+          return { pixeldrain: settings.pixeldrain_user, mega: settings.mega_email, gofile: settings.gofile_user };
+        case "mega_sign_out":
+          settings.mega_email = null;
+          return { pixeldrain: settings.pixeldrain_user, mega: null, gofile: settings.gofile_user };
 
         case "plugin:dialog|open":
           return args.options?.directory ? "D:\\Games" : "D:\\Games\\Some Game\\Some Game.exe";

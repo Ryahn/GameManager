@@ -23,6 +23,12 @@ pub enum ApiError {
     Invalid { message: String },
     #[error("{message}")]
     Internal { message: String },
+    /// F95 needs the user in the browser window (sign in, Cloudflare check).
+    #[error("needs the F95 window: {reason}")]
+    NeedsBrowser { reason: String, url: String },
+    /// Past the daily soft limit: the user has to type the confirmation.
+    #[error("confirmation required")]
+    ConfirmRequired { daily: usize, limit: usize },
 }
 
 impl ApiError {

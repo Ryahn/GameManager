@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { ChevronRight } from "lucide-react";
 import { ErrorPanel } from "@/components/ui/primitives";
-import { useLibraryIds, useLocalMap, usePlay, useRunning, useToggleLibrary } from "@/hooks/queries";
+import { useLibraryIds, useLibraryToggle, useLocalMap, usePlay, useRunning } from "@/hooks/queries";
 import { GameCard, GameCardSkeleton, GameGrid, type GameCardData } from "./GameCard";
 import { withLocal } from "./mappers";
 
@@ -28,7 +28,7 @@ export function GameRow({
   min?: number;
 }) {
   const library = useLibraryIds();
-  const toggle = useToggleLibrary();
+  const toggle = useLibraryToggle();
   const local = useLocalMap();
   const running = useRunning();
   const play = usePlay();
@@ -57,7 +57,7 @@ export function GameRow({
                   key={g.id}
                   game={withLocal(g, local.get(g.id))}
                   inLibrary={library.has(g.id)}
-                  onToggleLibrary={(add) => toggle.mutate({ id: g.id, add, title: g.title })}
+                  onToggleLibrary={(add) => toggle(g, add)}
                   onPlay={() => play.mutate({ id: g.id, title: g.title })}
                   running={running.data?.has(g.id)}
                 />

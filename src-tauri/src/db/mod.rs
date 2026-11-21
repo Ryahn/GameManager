@@ -5,7 +5,10 @@
 //! The server stays the source of truth for *which* games are tracked
 //! (bookmarks) and for update detection. This database only decorates them.
 
+mod downloads;
 mod migrations;
+
+pub use downloads::{DownloadJob, JobSource, JobState};
 
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -597,18 +600,34 @@ impl Db {
         Ok(fresh)
     }
 
-    /// Ids of games whose install folder is already known (for the scanner).
-    pub fn linked_dirs(&self) -> DbResult<Vec<(i64, String)>> {
+    /// Games whose install folder is known, and whether each is in the
+    /// library (for the scanner).
+    pub fn linked_dirs(&self) -> DbResult<Vec<(i64, String, bool)>> {
         let conn = self.conn();
         let mut st = conn
             .prepare(
-                "SELECT thread_id, install_dir FROM user_games WHERE install_dir IS NOT NULL",
+                "SELECT thread_id, install_dir, in_library FROM user_games WHERE install_dir IS NOT NULL",
             )
             .map_err(err)?;
         let rows = st
-            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
             .map_err(err)?;
         rows.collect::<Result<_, _>>().map_err(err)
+    }
+
+    /// Forgets where a game is installed and takes it out of the library.
+    /// Notes, rating and play history stay, in case it's added back.
+    pub fn unlink_install(&self, id: i64) -> DbResult<()> {
+        let mut conn = self.conn();
+        let tx = conn.transaction().map_err(err)?;
+        tx.execute("DELETE FROM launch_targets WHERE thread_id = ?1", [id])
+            .map_err(err)?;
+        tx.execute(
+            "UPDATE user_games SET install_dir = NULL, installed_version = NULL, in_library = 0 WHERE thread_id = ?1",
+            [id],
+        )
+        .map_err(err)?;
+        tx.commit().map_err(err)
     }
 }
 
@@ -713,6 +732,27 @@ mod tests {
         assert_eq!(g.play_status, PlayStatus::Playing);
         assert_eq!(db.sessions(1, 10).unwrap().len(), 2);
         assert_eq!(db.recently_played(5).unwrap(), vec![(1, "Thread 1".into())]);
+    }
+
+    #[test]
+    fn unlinking_keeps_notes_but_leaves_the_library() {
+        let db = Db::in_memory();
+        db.cache_threads(&[thread(1, "A")], true).unwrap();
+        db.add_target(1, "C:/Games/A/A.exe", "A", "").unwrap();
+        db.update(
+            1,
+            LocalPatch {
+                notes: Some("ending B".into()),
+                install_dir: Some("C:/Games/A".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        db.unlink_install(1).unwrap();
+        assert!(db.list().unwrap().is_empty());
+        let g = db.get(1).unwrap().unwrap();
+        assert!(g.targets.is_empty() && g.install_dir.is_none() && !g.in_library);
+        assert_eq!(g.notes, "ending B");
     }
 
     #[test]
