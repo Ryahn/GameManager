@@ -287,38 +287,133 @@ fn updater(app: &AppHandle) -> Result<tauri_plugin_updater::Updater, ApiError> {
         .map_err(ApiError::internal)
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct UpdateInfo {
     version: String,
     notes: Option<String>,
 }
 
-#[tauri::command]
-pub async fn update_check(app: AppHandle) -> Result<Option<UpdateInfo>, ApiError> {
-    let up = updater(&app)?
+/// The newest update found by the background check (shown as a banner).
+#[derive(Default)]
+pub struct Updates {
+    available: Mutex<Option<UpdateInfo>>,
+    installing: AtomicBool,
+}
+
+impl Updates {
+    fn set(&self, v: Option<UpdateInfo>) {
+        *self.available.lock().unwrap_or_else(|p| p.into_inner()) = v;
+    }
+    fn get(&self) -> Option<UpdateInfo> {
+        self.available.lock().unwrap_or_else(|p| p.into_inner()).clone()
+    }
+}
+
+async fn check_now(app: &AppHandle) -> Result<Option<UpdateInfo>, ApiError> {
+    let up = updater(app)?
         .check()
         .await
         .map_err(|e| ApiError::Network { message: e.to_string() })?;
-    Ok(up.map(|u| UpdateInfo {
+    let info = up.map(|u| UpdateInfo {
         version: u.version.clone(),
         notes: u.body.clone(),
-    }))
+    });
+    let updates = app.state::<Arc<Updates>>();
+    let was = updates.get();
+    updates.set(info.clone());
+    if let Some(i) = &info
+        && was.as_ref() != Some(i) {
+            let _ = app.emit("update-available", i);
+            crate::notify::send(
+                app,
+                "Update available",
+                &format!("F95 Game Manager {} is ready to install.", i.version),
+            );
+        }
+    Ok(info)
 }
 
-/// Downloads, verifies the signature, installs and restarts.
+const FIRST_UPDATE_CHECK: Duration = Duration::from_secs(60);
+const UPDATE_CHECK_EVERY: Duration = Duration::from_secs(6 * 60 * 60);
+
+/// Checks a minute after start, then every 6 hours, when the build has an
+/// update key and the user hasn't turned automatic checks off.
+pub fn start_update_checks(app: AppHandle) {
+    if !updater_configured() {
+        return;
+    }
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(FIRST_UPDATE_CHECK).await;
+        loop {
+            let enabled = app.state::<AppState>().settings.get().await.auto_update_check;
+            if enabled
+                && let Err(e) = check_now(&app).await {
+                    log::warn!("update check failed: {e}");
+                }
+            tokio::time::sleep(UPDATE_CHECK_EVERY).await;
+        }
+    });
+}
+
+#[tauri::command]
+pub async fn update_check(app: AppHandle) -> Result<Option<UpdateInfo>, ApiError> {
+    check_now(&app).await
+}
+
+/// What the last check found, without asking the server again.
+#[tauri::command]
+pub fn update_status(updates: State<'_, Arc<Updates>>) -> Option<UpdateInfo> {
+    updates.get()
+}
+
+#[derive(Clone, Serialize)]
+struct UpdateProgress {
+    downloaded: u64,
+    total: Option<u64>,
+}
+
+/// Downloads, verifies the signature, installs and restarts. Queued and
+/// running downloads resume after the restart (from their .part files).
 #[tauri::command]
 pub async fn update_install(app: AppHandle) -> Result<(), ApiError> {
-    let Some(update) = updater(&app)?
-        .check()
-        .await
-        .map_err(|e| ApiError::Network { message: e.to_string() })?
-    else {
-        return Err(invalid("You're already on the latest version."));
-    };
-    update
-        .download_and_install(|_, _| {}, || {})
-        .await
-        .map_err(|e| invalid(format!("The update couldn't be installed: {e}")))?;
+    if !app.state::<Arc<crate::launch::Launcher>>().running_ids().is_empty() {
+        return Err(invalid("Close your game first, then install the update."));
+    }
+    let updates = app.state::<Arc<Updates>>().inner().clone();
+    if updates.installing.swap(true, Ordering::SeqCst) {
+        return Err(invalid("The update is already being installed."));
+    }
+    let result = async {
+        let Some(update) = updater(&app)?
+            .check()
+            .await
+            .map_err(|e| ApiError::Network { message: e.to_string() })?
+        else {
+            updates.set(None);
+            return Err(invalid("You're already on the latest version."));
+        };
+        let mut downloaded = 0u64;
+        let mut last = Instant::now() - Duration::from_secs(1);
+        let progress_app = app.clone();
+        update
+            .download_and_install(
+                move |chunk, total| {
+                    downloaded += chunk as u64;
+                    if last.elapsed() >= Duration::from_millis(250) {
+                        last = Instant::now();
+                        let _ = progress_app.emit("update-progress", UpdateProgress { downloaded, total });
+                    }
+                },
+                || {},
+            )
+            .await
+            .map_err(|e| invalid(format!("The update couldn't be installed: {e}")))
+    }
+    .await;
+    if let Err(e) = result {
+        updates.installing.store(false, Ordering::SeqCst);
+        return Err(e);
+    }
     app.restart();
 }
 

@@ -3,6 +3,7 @@ import { Search, UserRound } from "lucide-react";
 import { Sidebar } from "./Sidebar";
 import { CommandPalette } from "./CommandPalette";
 import { RemoveGameDialog } from "@/features/library/RemoveGameDialog";
+import { UpdateBanner } from "./UpdateBanner";
 import { Kbd } from "@/components/ui/primitives";
 import { useAuth, useBackendEvents } from "@/hooks/queries";
 import { useUi } from "@/state/ui";
@@ -48,6 +49,7 @@ export function AppShell() {
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar />
+        <UpdateBanner />
         <main className="min-h-0 flex-1 overflow-y-auto">
           <div className="mx-auto w-full max-w-[1480px] px-6 py-6 lg:px-8">
             <Outlet />
