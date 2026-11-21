@@ -25,6 +25,7 @@ use crate::commands::AppState;
 use crate::db::{self, Db, DownloadJob, JobSource, JobState};
 use crate::f95::GameCtx;
 use crate::launch::Launcher;
+use crate::media::Kind;
 use limits::HostGates;
 use transfer::TransferError;
 
@@ -52,9 +53,9 @@ pub struct Downloads {
     wake: Notify,
     http: reqwest::Client,
     paused_for_game: AtomicBool,
-    /// The games folder, refreshed from settings every tick (so sync code
-    /// such as the browser's download hook can read it).
-    library: Mutex<Option<PathBuf>>,
+    /// The games/comics/animations folders, refreshed from settings every
+    /// tick (so sync code such as the browser's download hook can read them).
+    folders: Mutex<[Option<String>; 3]>,
 }
 
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
@@ -112,16 +113,26 @@ impl Downloads {
             wake: Notify::new(),
             http,
             paused_for_game: AtomicBool::new(false),
-            library: Mutex::new(None),
+            folders: Mutex::new([None, None, None]),
         }
     }
 
-    pub fn set_library(&self, dir: Option<String>) {
-        *lock(&self.library) = dir.map(PathBuf::from).filter(|p| p.is_dir());
+    pub fn set_folders(&self, s: &crate::settings::Settings) {
+        *lock(&self.folders) = [s.library_dir.clone(), s.comics_dir.clone(), s.animations_dir.clone()];
     }
 
-    pub fn library(&self) -> Option<PathBuf> {
-        lock(&self.library).clone()
+    /// The folder `kind` installs into. A default "Comics"/"Animations"
+    /// subfolder is created inside the games folder when needed.
+    pub fn folder(&self, kind: Kind) -> Option<PathBuf> {
+        let [g, c, a] = lock(&self.folders).clone();
+        let dir = crate::media::folder_for(kind, g.as_deref(), c.as_deref(), a.as_deref())?;
+        if !dir.is_dir() {
+            let parent_ok = dir.parent().is_some_and(Path::is_dir);
+            if kind == Kind::Games || !parent_ok || std::fs::create_dir_all(&dir).is_err() {
+                return None;
+            }
+        }
+        Some(dir)
     }
 
     pub fn snapshot(&self, db: &Db, max_active: usize) -> Snapshot {
@@ -199,6 +210,7 @@ impl Downloads {
         job.title = ctx.title.clone();
         job.creator = ctx.creator.clone();
         job.version = ctx.version.clone();
+        job.category = Kind::parse(&ctx.category).as_str().to_string();
         let db = app.state::<Arc<Db>>();
         job.id = db.insert_job(&job)?;
         let id = job.id;
@@ -216,7 +228,8 @@ impl Downloads {
         url: &str,
         name: Option<String>,
     ) -> Option<PathBuf> {
-        let library = self.library()?;
+        let kind = ctx.as_ref().map(|c| Kind::parse(&c.category)).unwrap_or(Kind::Games);
+        let library = self.folder(kind)?;
         let db = app.state::<Arc<Db>>();
         let host = url::Url::parse(url)
             .ok()
@@ -228,6 +241,7 @@ impl Downloads {
             job.title = c.title.clone();
             job.creator = c.creator.clone();
             job.version = c.version.clone();
+            job.category = kind.as_str().to_string();
         } else {
             job.title = name.clone().unwrap_or_else(|| "Download".into());
         }
@@ -313,7 +327,7 @@ impl Downloads {
             pos.map(|p| jobs.remove(p))
         };
         if let Some(job) = job {
-            if let Some(lib) = self.library()
+            if let Some(lib) = self.folder(Kind::parse(&job.category))
                 && (job.state != JobState::Done || job.install_dir.is_some()) {
                     let _ = std::fs::remove_dir_all(downloads_dir(&lib, job.id));
                 }
@@ -362,7 +376,7 @@ pub fn start(app: AppHandle) {
 
 async fn tick(app: &AppHandle, dl: &Arc<Downloads>) {
     let settings = app.state::<AppState>().settings.get().await;
-    dl.set_library(settings.library_dir.clone());
+    dl.set_folders(&settings);
     let max_active = limits::clamp_active(settings.max_active_downloads as usize);
     let game_running = !app.state::<Arc<Launcher>>().running_ids().is_empty();
     let was = dl.paused_for_game.swap(game_running, Ordering::SeqCst);
@@ -461,10 +475,10 @@ async fn tick(app: &AppHandle, dl: &Arc<Downloads>) {
 
 async fn run_direct(app: &AppHandle, dl: &Arc<Downloads>, id: i64) {
     let Some(job) = dl.get(id) else { return };
-    let Some(library) = dl.library() else {
+    let Some(library) = dl.folder(Kind::parse(&job.category)) else {
         dl.update(app, id, |j| {
             j.state = JobState::NeedsYou;
-            j.error = Some("Choose your games folder in Settings, then retry.".into());
+            j.error = Some("Choose a folder for this type in Settings, then retry.".into());
         });
         return;
     };
@@ -625,10 +639,10 @@ fn first_archive(mut paths: Vec<PathBuf>) -> PathBuf {
 async fn install_job(app: &AppHandle, id: i64) {
     let dl = app.state::<Arc<Downloads>>().inner().clone();
     let Some(job) = dl.get(id) else { return };
-    let Some(library) = dl.library() else {
+    let Some(library) = dl.folder(Kind::parse(&job.category)) else {
         dl.update(app, id, |j| {
             j.state = JobState::NeedsYou;
-            j.error = Some("Choose your games folder in Settings, then retry.".into());
+            j.error = Some("Choose a folder for this type in Settings, then retry.".into());
         });
         return;
     };
@@ -636,7 +650,8 @@ async fn install_job(app: &AppHandle, id: i64) {
     let settings = app.state::<AppState>().settings.get().await;
     let db = app.state::<Arc<Db>>().inner().clone();
 
-    if crate::install::archive_kind(&archive).is_none() {
+    let kind = Kind::parse(&job.category);
+    if crate::install::archive_kind(&archive).is_none() && kind == Kind::Games {
         dl.update(app, id, |j| {
             j.state = JobState::Done;
             j.finished_at = Some(db::now());
@@ -651,12 +666,6 @@ async fn install_job(app: &AppHandle, id: i64) {
     let lib2 = library.clone();
     let db2 = db.clone();
     let result = tauri::async_runtime::spawn_blocking(move || -> Result<(PathBuf, Vec<String>), String> {
-        let _ = std::fs::remove_dir_all(&staging);
-        let n = crate::install::extract(&archive, &staging)?;
-        if n == 0 {
-            return Err("The archive was empty.".into());
-        }
-        let root = crate::install::game_root(&staging);
         let dest = match job2.thread_id {
             Some(_) => crate::install::destination(
                 &lib2,
@@ -666,18 +675,38 @@ async fn install_job(app: &AppHandle, id: i64) {
             ),
             None => crate::install::destination(&lib2, "Unsorted", &job2.title, "download"),
         };
-        crate::install::move_dir(&root, &dest).map_err(|e| format!("Couldn't move the game into place: {e}"))?;
-        crate::install::fix_permissions(&dest);
-        let _ = std::fs::remove_dir_all(&staging);
+        if crate::install::archive_kind(&archive).is_some() {
+            let _ = std::fs::remove_dir_all(&staging);
+            let n = crate::install::extract(&archive, &staging)?;
+            if n == 0 {
+                return Err("The archive was empty.".into());
+            }
+            let root = crate::install::game_root(&staging);
+            crate::install::move_dir(&root, &dest).map_err(|e| format!("Couldn't move it into place: {e}"))?;
+            let _ = std::fs::remove_dir_all(&staging);
+        } else {
+            // A comic (.cbz, .pdf) or video file: keep it whole in its folder.
+            std::fs::create_dir_all(&dest).map_err(|e| e.to_string())?;
+            let name = archive.file_name().ok_or("The download has no file name.")?;
+            let target = dest.join(name);
+            if std::fs::rename(&archive, &target).is_err() {
+                std::fs::copy(&archive, &target).map_err(|e| format!("Couldn't move it into place: {e}"))?;
+            }
+        }
+        if kind == Kind::Games {
+            crate::install::fix_permissions(&dest);
+        }
 
         let mut saves = Vec::new();
         if let Some(tid) = job2.thread_id {
             let old = db2.get(tid)?.and_then(|g| g.install_dir);
             if let Some(old) = old.filter(|o| !crate::library::same_path(o, &dest.to_string_lossy())) {
-                saves = crate::install::carry_saves(Path::new(&old), &dest);
+                if kind == Kind::Games {
+                    saves = crate::install::carry_saves(Path::new(&old), &dest);
+                }
                 db2.remove_targets_under(tid, &old)?;
             }
-            crate::local_commands::link_folder(&db2, tid, &dest.to_string_lossy(), Some(job2.version.clone()))?;
+            crate::local_commands::link_folder(&db2, tid, &dest.to_string_lossy(), Some(job2.version.clone()), kind)?;
             db2.set_in_library(tid, true)?;
         }
         Ok((dest, saves))
@@ -719,7 +748,11 @@ async fn install_job(app: &AppHandle, id: i64) {
             crate::tray::refresh(app);
             crate::notify::send(
                 app,
-                "Ready to play",
+                match kind {
+                    Kind::Games => "Ready to play",
+                    Kind::Comics => "Ready to read",
+                    Kind::Animations => "Ready to watch",
+                },
                 &format!("{} {} is installed.", job.title, job.version),
             );
         }

@@ -35,6 +35,9 @@ pub struct GameCtx {
     pub title: String,
     pub creator: String,
     pub version: String,
+    /// "games" (default), "comics" or "animations".
+    #[serde(default)]
+    pub category: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -461,6 +464,7 @@ mod tests {
             title: "T".into(),
             creator: "C".into(),
             version: "v1".into(),
+            category: String::new(),
         });
         assert_eq!(f.context().unwrap().thread_id, 1);
         if let Some(old) = Instant::now().checked_sub(CONTEXT_TTL) {

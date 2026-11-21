@@ -15,6 +15,10 @@ pub struct Settings {
     pub auth_mode: Option<AuthMode>,
     pub username: Option<String>,
     pub library_dir: Option<String>,
+    /// Where comics and animations go. None = "Comics" / "Animations"
+    /// inside the games folder.
+    pub comics_dir: Option<String>,
+    pub animations_dir: Option<String>,
     pub theme: String,
     pub accent: String,
     pub ui_scale: f32,
@@ -49,6 +53,8 @@ impl Default for Settings {
             auth_mode: None,
             username: None,
             library_dir: None,
+            comics_dir: None,
+            animations_dir: None,
             theme: "dark".into(),
             accent: "violet".into(),
             ui_scale: 1.0,
@@ -75,6 +81,9 @@ impl Default for Settings {
 pub struct SettingsPatch {
     pub onboarding_complete: Option<bool>,
     pub library_dir: Option<String>,
+    /// Empty string = back to the default subfolder.
+    pub comics_dir: Option<String>,
+    pub animations_dir: Option<String>,
     pub theme: Option<String>,
     pub accent: Option<String>,
     pub ui_scale: Option<f32>,
@@ -96,6 +105,12 @@ impl Settings {
         }
         if let Some(v) = p.library_dir {
             self.library_dir = Some(v).filter(|s| !s.trim().is_empty());
+        }
+        if let Some(v) = p.comics_dir {
+            self.comics_dir = Some(v).filter(|s| !s.trim().is_empty());
+        }
+        if let Some(v) = p.animations_dir {
+            self.animations_dir = Some(v).filter(|s| !s.trim().is_empty());
         }
         if let Some(v) = p
             .theme

@@ -24,6 +24,8 @@ pub struct ScanFolder {
     pub linked_in_library: bool,
     /// Best catalog match, if the search found one.
     pub suggestion: Option<MatchSuggestion>,
+    /// Comics/animations: how many images or videos were found.
+    pub media_count: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -65,6 +67,7 @@ fn folder(path: PathBuf, targets: Vec<Candidate>) -> ScanFolder {
         linked_thread_id: None,
         linked_in_library: false,
         suggestion: None,
+        media_count: 0,
     }
 }
 
@@ -128,14 +131,124 @@ pub fn scan(root: &Path, linked: &[(i64, String, bool)]) -> Vec<ScanFolder> {
     out
 }
 
+/// One comic or animation found on disk: a folder of images/videos, or a
+/// single comic file (.cbz, .pdf) or video.
+fn media_item(path: PathBuf, count: usize) -> ScanFolder {
+    let mut f = folder(path, Vec::new());
+    if f.title_guess.is_empty() || std::path::Path::new(&f.path).is_file() {
+        let stem = std::path::Path::new(&f.path)
+            .file_stem()
+            .and_then(|n| n.to_str())
+            .unwrap_or_default()
+            .to_string();
+        let (t, v) = detect::parse_folder_name(&stem);
+        f.title_guess = t;
+        f.version_guess = v;
+    }
+    // Comics often use a plain "v2" / "[v2]" that game folders don't.
+    if f.version_guess.is_none() {
+        static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+        let re = RE.get_or_init(|| regex::Regex::new(r"(?i)\s*[\[(]?\bv(\d+)[\])]?\s*$").expect("regex"));
+        if let Some(c) = re.captures(&f.title_guess) {
+            f.version_guess = Some(c[1].to_string());
+            f.title_guess = f.title_guess[..c.get(0).map_or(0, |m| m.start())].trim().to_string();
+        }
+    }
+    f.media_count = count;
+    f
+}
+
+fn has_media_below(dir: &Path, kind: crate::media::Kind, depth: usize) -> usize {
+    let here = crate::media::count_direct(dir, kind);
+    if here > 0 || depth == 0 {
+        return here;
+    }
+    subdirs(dir).iter().map(|d| has_media_below(d, kind, depth - 1)).sum()
+}
+
+/// Finds comics or animations under `root`, using whatever layout the user
+/// already has: `Title/…`, `Creator/Title/…`, or loose files. A folder whose
+/// subfolders are chapters/episodes/volumes counts as one work.
+pub fn scan_media(root: &Path, kind: crate::media::Kind, linked: &[(i64, String, bool)]) -> Vec<ScanFolder> {
+    use crate::media::{count_direct, is_comic_file, is_part_name, is_video, Kind};
+    let min_images = 3;
+    let is_item_file = |p: &Path| match kind {
+        Kind::Comics => is_comic_file(p),
+        Kind::Animations => is_video(p),
+        Kind::Games => false,
+    };
+    let counts_as_work = |dir: &Path| -> Option<usize> {
+        let direct = count_direct(dir, kind);
+        let enough = if kind == Kind::Comics { direct >= min_images } else { direct >= 1 };
+        if enough {
+            return Some(direct);
+        }
+        // Chapters/episodes in subfolders.
+        let parts: Vec<_> = subdirs(dir)
+            .into_iter()
+            .filter(|d| d.file_name().and_then(|n| n.to_str()).is_some_and(is_part_name))
+            .collect();
+        let in_parts: usize = parts.iter().map(|d| has_media_below(d, kind, 1)).sum();
+        (!parts.is_empty() && in_parts > 0).then_some(in_parts)
+    };
+
+    let mut out = Vec::new();
+    // Loose files directly in the root.
+    if let Ok(rd) = std::fs::read_dir(root) {
+        let mut files: Vec<PathBuf> = rd
+            .filter_map(Result::ok)
+            .filter(|e| e.file_type().is_ok_and(|t| t.is_file()))
+            .map(|e| e.path())
+            .filter(|p| is_item_file(p))
+            .collect();
+        files.sort();
+        // A root that is itself one work (a folder of pages) is one item.
+        if kind == Kind::Comics && count_direct(root, kind) >= min_images && files.iter().all(|p| !is_comic_file(p)) {
+            out.push(media_item(root.to_path_buf(), count_direct(root, kind)));
+        } else {
+            out.extend(files.into_iter().map(|p| media_item(p, 1)));
+        }
+    }
+    for child in subdirs(root) {
+        if out.len() >= MAX_FOLDERS {
+            break;
+        }
+        if let Some(n) = counts_as_work(&child) {
+            out.push(media_item(child, n));
+            continue;
+        }
+        // A creator (or series) folder: each work inside it.
+        for grand in subdirs(&child) {
+            if let Some(n) = counts_as_work(&grand) {
+                out.push(media_item(grand, n));
+            }
+        }
+        if let Ok(rd) = std::fs::read_dir(&child) {
+            for e in rd.filter_map(Result::ok) {
+                let p = e.path();
+                if e.file_type().is_ok_and(|t| t.is_file()) && is_item_file(&p) && kind != Kind::Animations {
+                    out.push(media_item(p, 1));
+                }
+            }
+        }
+    }
+    for f in &mut out {
+        if let Some((id, _, in_library)) = linked.iter().find(|(_, dir, _)| same_path(dir, &f.path)) {
+            f.linked_thread_id = Some(*id);
+            f.linked_in_library = *in_library;
+        }
+    }
+    out
+}
+
 pub fn same_path(a: &str, b: &str) -> bool {
     crate::platform::norm_path(a) == crate::platform::norm_path(b)
 }
 
 /// Picks the best search hit for a folder's title guess.
-pub fn pick_match(title: &str, hits: &[SearchHit]) -> Option<MatchSuggestion> {
+pub fn pick_match(title: &str, hits: &[SearchHit], kind: crate::media::Kind) -> Option<MatchSuggestion> {
     hits.iter()
-        .filter(|h| h.category.is_empty() || h.category == "games")
+        .filter(|h| h.category.is_empty() || crate::media::Kind::parse(&h.category) == kind)
         .map(|h| (h, detect::title_similarity(title, &h.title)))
         .max_by(|a, b| a.1.total_cmp(&b.1))
         .filter(|(_, s)| *s >= 0.45)
@@ -188,6 +301,39 @@ mod tests {
     }
 
     #[test]
+    fn finds_comics_and_animations_as_laid_out() {
+        let root = std::env::temp_dir().join(format!("f95gm-scanmedia-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        for p in ["Summer Days/001.jpg", "Summer Days/002.jpg", "Summer Days/003.png"] {
+            touch(&root.join(p));
+        }
+        touch(&root.join("Night Out [v2].cbz"));
+        touch(&root.join("Velvet Dev/Haven Comic/Chapter 1/01.jpg"));
+        touch(&root.join("Velvet Dev/Haven Comic/Chapter 2/01.jpg"));
+        touch(&root.join("Velvet Dev/Other Comic/p1.webp"));
+        touch(&root.join("Velvet Dev/Other Comic/p2.webp"));
+        touch(&root.join("Velvet Dev/Other Comic/p3.webp"));
+        touch(&root.join("Notes/readme.txt"));
+        let found = scan_media(&root, crate::media::Kind::Comics, &[]);
+        let titles: Vec<_> = found.iter().map(|f| f.title_guess.as_str()).collect();
+        assert_eq!(found.len(), 4, "{titles:?}");
+        for t in ["Summer Days", "Night Out", "Haven Comic", "Other Comic"] {
+            assert!(titles.contains(&t), "{t} in {titles:?}");
+        }
+        assert_eq!(found.iter().find(|f| f.title_guess == "Haven Comic").unwrap().media_count, 2);
+
+        let anim = root.join("anim");
+        touch(&anim.join("Studio X/Show/Episode 1/ep1.mp4"));
+        touch(&anim.join("Studio X/Show/Episode 2/ep2.mp4"));
+        touch(&anim.join("Clip.webm"));
+        let found = scan_media(&anim, crate::media::Kind::Animations, &[]);
+        let titles: Vec<_> = found.iter().map(|f| f.title_guess.as_str()).collect();
+        assert_eq!(found.len(), 2, "{titles:?}");
+        assert!(titles.contains(&"Show") && titles.contains(&"Clip"));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn single_game_root() {
         let root = std::env::temp_dir().join(format!("f95gm-scan1-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
@@ -208,9 +354,10 @@ mod tests {
             ..Default::default()
         };
         let hits = vec![hit(1, "Summer Academy"), hit(2, "Summer Nights"), hit(3, "Nights")];
-        let m = pick_match("Summer Nights", &hits).unwrap();
+        let m = pick_match("Summer Nights", &hits, crate::media::Kind::Games).unwrap();
         assert_eq!(m.thread_id, 2);
         assert!(m.confidence >= CONFIDENT);
-        assert!(pick_match("Totally Different", &hits).is_none());
+        assert!(pick_match("Totally Different", &hits, crate::media::Kind::Games).is_none());
+        assert!(pick_match("Summer Nights", &hits, crate::media::Kind::Comics).is_none(), "only the right type");
     }
 }

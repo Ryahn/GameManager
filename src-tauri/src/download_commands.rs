@@ -74,16 +74,18 @@ pub async fn download_start(
     confirm: Option<String>,
 ) -> Result<StartOutcome, ApiError> {
     let settings = state.settings.get().await;
-    if settings
-        .library_dir
-        .as_deref()
-        .is_none_or(|d| !std::path::Path::new(d).is_dir())
-    {
+    downloads.set_folders(&settings);
+    let kind = crate::media::Kind::parse(&game.category);
+    if downloads.folder(kind).is_none() {
+        let what = match kind {
+            crate::media::Kind::Games => "games",
+            crate::media::Kind::Comics => "comics",
+            crate::media::Kind::Animations => "animations",
+        };
         return Err(ApiError::Invalid {
-            message: "Choose your games folder in Settings first. Downloads are installed there.".into(),
+            message: format!("Choose a folder for {what} in Settings first. Downloads are installed there."),
         });
     }
-    downloads.set_library(settings.library_dir.clone());
 
     let url = Url::parse(&link.url).map_err(|_| ApiError::Invalid {
         message: "That link isn't valid.".into(),
@@ -188,6 +190,7 @@ pub async fn download_open_in_browser(
         title: job.title.clone(),
         creator: job.creator.clone(),
         version: job.version.clone(),
+        category: job.category.clone(),
     });
     f95::open_browser(&app, &job.page_url, ctx)?;
     downloads.remove(&app, id);

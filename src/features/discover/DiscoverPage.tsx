@@ -6,6 +6,7 @@ import { GameRow } from "@/components/game/GameRow";
 import { fromHandiwork, fromHit } from "@/components/game/mappers";
 import { useLatest, useSearch } from "@/hooks/queries";
 import type { LatestQuery } from "@/lib/ipc";
+import { KINDS, kindMeta, kindOf, type Kind } from "@/lib/kinds";
 
 type Order = NonNullable<LatestQuery["order"]>;
 type Window = "any" | "7" | "30" | "90" | "365";
@@ -28,6 +29,7 @@ const WINDOWS: { value: Window; label: string }[] = [
 const PAGE_SIZE = 30;
 
 export function DiscoverPage() {
+  const [kind, setKind] = useState<Kind>("games");
   const [order, setOrder] = useState<Order>("date");
   const [win, setWin] = useState<Window>("any");
   const [page, setPage] = useState(1);
@@ -38,10 +40,11 @@ export function DiscoverPage() {
     const t = setTimeout(() => setQ(text.trim()), 300);
     return () => clearTimeout(t);
   }, [text]);
-  useEffect(() => setPage(1), [order, win]);
+  useEffect(() => setPage(1), [order, win, kind]);
 
   const searching = q.length >= 2;
   const query: LatestQuery = {
+    category: kind,
     order,
     date: win === "any" ? undefined : (Number(win) as LatestQuery["date"]),
     page,
@@ -52,7 +55,11 @@ export function DiscoverPage() {
 
   return (
     <div className="animate-fade-up">
-      <PageHeader title="Discover" subtitle="Browse the whole catalog. Click + on any game to add it to your library." />
+      <PageHeader
+        title="Discover"
+        subtitle={`Browse the whole catalog. Click + on any ${kindMeta(kind).one} to add it to your library.`}
+        actions={<Segmented label="Type" value={kind} onChange={setKind} options={KINDS.map((k) => ({ value: k.value, label: k.label }))} />}
+      />
 
       <div className="sticky top-0 z-10 -mx-2 mb-6 flex flex-wrap items-center gap-3 rounded-xl bg-bg/85 px-2 py-2 backdrop-blur">
         <div className="relative w-full max-w-sm">
@@ -86,7 +93,7 @@ export function DiscoverPage() {
       {searching ? (
         <GameRow
           title={`Results for "${q}"`}
-          games={search.data?.hits.map(fromHit)}
+          games={search.data?.hits.filter((h) => kindOf(h.category) === kind).map(fromHit)}
           isLoading={search.isLoading}
           error={search.error}
           onRetry={() => search.refetch()}

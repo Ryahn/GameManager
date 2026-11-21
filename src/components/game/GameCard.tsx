@@ -1,9 +1,10 @@
 import { memo, useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { Check, ImageOff, Play, Plus, X } from "lucide-react";
+import { Check, FolderOpen, ImageOff, Play, Plus, X } from "lucide-react";
 import { Badge } from "@/components/ui/primitives";
 import { cn, cleanVersion, imageSrc, statusTone, timeAgo } from "@/lib/utils";
 import type { PlayStatus } from "@/lib/ipc";
+import type { Kind } from "@/lib/kinds";
 import { statusMeta } from "@/lib/play";
 
 export interface GameCardData {
@@ -20,6 +21,8 @@ export interface GameCardData {
   rating?: number | null;
   /** Local state, when known. */
   installed?: boolean;
+  /** Catalog type; games when unknown. */
+  category?: Kind;
   /** Installed on this computer but not in the server library (no update checks). */
   untracked?: boolean;
   playStatus?: PlayStatus;
@@ -117,11 +120,11 @@ export const GameCard = memo(function GameCard({
             <button
               type="button"
               onClick={onPlay}
-              aria-label={`Play ${game.title}`}
-              title="Play"
+              aria-label={game.category && game.category !== "games" ? `Open ${game.title}` : `Play ${game.title}`}
+              title={game.category && game.category !== "games" ? "Open folder" : "Play"}
               className="absolute bottom-2 right-2 z-[2] grid size-10 place-items-center rounded-full bg-accent text-accent-fg opacity-0 shadow-card transition-all hover:scale-105 hover:bg-accent-hover group-hover:opacity-100 focus-visible:opacity-100"
             >
-              <Play className="size-4 fill-current" />
+              {game.category && game.category !== "games" ? <FolderOpen className="size-4" /> : <Play className="size-4 fill-current" />}
             </button>
           )
         )}

@@ -88,6 +88,9 @@ const MIGRATIONS: &[&str] = &[
      );
      CREATE TABLE download_log (started_at INTEGER NOT NULL);
      CREATE INDEX download_log_time ON download_log(started_at);",
+    // v3: comics and animations
+    "ALTER TABLE games ADD COLUMN category TEXT NOT NULL DEFAULT 'games';
+     ALTER TABLE download_jobs ADD COLUMN category TEXT NOT NULL DEFAULT 'games';",
 ];
 
 pub fn run(conn: &mut Connection, path: Option<&Path>) -> Result<(), String> {

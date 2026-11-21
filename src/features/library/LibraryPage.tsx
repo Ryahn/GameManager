@@ -13,6 +13,7 @@ import { api, type LocalGame, type PlayStatus } from "@/lib/ipc";
 import { friendlyError } from "@/lib/errors";
 import { PLAY_STATUSES, formatPlaytime, statusMeta } from "@/lib/play";
 import { cleanVersion, cn, timeAgo } from "@/lib/utils";
+import { KINDS, countLabel, type Kind } from "@/lib/kinds";
 import { ScanDialog } from "./ScanDialog";
 
 type Show = "all" | "updates" | "installed";
@@ -120,6 +121,7 @@ export function LibraryPage() {
   const setCardSize = useUi((s) => s.setCardSize);
   const [text, setText] = useState("");
   const [show, setShow] = useState<Show>("all");
+  const [kind, setKind] = useState<Kind>("games");
   const [status, setStatus] = useState<StatusFilter>("any");
   const [label, setLabel] = useState<string | null>(null);
   const [sort, setSort] = useState<Sort>("recent");
@@ -129,7 +131,7 @@ export function LibraryPage() {
   // Can't reach the server: fall back to the copy saved on this computer.
   const offline = !!library.error && !!localQ.data?.some((g) => g.in_library);
 
-  const all: Entry[] = useMemo(() => {
+  const everything: Entry[] = useMemo(() => {
     if (library.data) {
       const tracked = new Set(library.data.items.map((b) => b.thread_id));
       const fromServer = library.data.items.map((b) => {
@@ -146,6 +148,12 @@ export function LibraryPage() {
     if (offline) return (localQ.data ?? []).filter((g) => g.in_library).map((l) => ({ card: fromLocal(l), local: l }));
     return [];
   }, [library.data, localMap, offline, localQ.data]);
+  const kindCounts = useMemo(() => {
+    const c: Record<Kind, number> = { games: 0, comics: 0, animations: 0 };
+    for (const e of everything) c[e.card.category ?? "games"]++;
+    return c;
+  }, [everything]);
+  const all = useMemo(() => everything.filter((e) => (e.card.category ?? "games") === kind), [everything, kind]);
 
   const labels = useMemo(() => [...new Set(all.flatMap((e) => e.local?.labels ?? []))].sort((a, b) => a.localeCompare(b)), [all]);
   const counts = {
@@ -171,7 +179,10 @@ export function LibraryPage() {
     return [...list].sort(by[sort]);
   }, [all, text, show, status, label, sort]);
 
-  const onPlay = (e: Entry) => play.mutate({ id: e.card.id, title: e.card.title });
+  const onPlay = (e: Entry) =>
+    e.card.category && e.card.category !== "games"
+      ? void api.openFolder(e.card.id)
+      : play.mutate({ id: e.card.id, title: e.card.title });
 
   const moveTo = async (id: number, to: PlayStatus) => {
     try {
@@ -184,11 +195,11 @@ export function LibraryPage() {
 
   const total = all.length;
   const loading = !library.data && !offline && !library.error;
-  const scan = <ScanDialog open={scanOpen} onOpenChange={setScanOpen} />;
+  const scan = <ScanDialog open={scanOpen} onOpenChange={setScanOpen} kind={kind} />;
 
   if (library.error && !offline) return <ErrorPanel error={library.error} onRetry={() => library.refetch()} />;
 
-  if (library.data && total === 0) {
+  if (library.data && everything.length === 0) {
     return (
       <>
         <EmptyState
@@ -222,16 +233,28 @@ export function LibraryPage() {
         subtitle={
           loading
             ? "Loading…"
-            : `${total} game${total === 1 ? "" : "s"}${counts.installed ? ` · ${counts.installed} installed` : ""}${
+            : `${countLabel(total, kind)}${counts.installed ? ` · ${counts.installed} installed` : ""}${
                 counts.updates ? ` · ${counts.updates} with updates` : ""
               }`
         }
         actions={
           <Button variant="outline" onClick={() => setScanOpen(true)}>
-            <FolderSearch /> Find games on this computer
+            <FolderSearch /> Find {KINDS.find((k) => k.value === kind)!.many} on this computer
           </Button>
         }
       />
+
+      <div className="mb-5">
+        <Segmented
+          label="Type"
+          value={kind}
+          onChange={(k) => {
+            setKind(k);
+            setLabel(null);
+          }}
+          options={KINDS.map((k) => ({ value: k.value, label: `${k.label}${kindCounts[k.value] ? ` (${kindCounts[k.value]})` : ""}` }))}
+        />
+      </div>
 
       {offline && (
         <div role="status" className="mb-5 flex items-center gap-3 rounded-xl border border-warning/30 bg-warning/8 px-4 py-3 text-sm">

@@ -85,6 +85,8 @@ pub struct DownloadJob {
     pub install_dir: Option<String>,
     pub created_at: i64,
     pub finished_at: Option<i64>,
+    /// "games", "comics" or "animations": decides where it installs.
+    pub category: String,
 }
 
 impl DownloadJob {
@@ -109,12 +111,13 @@ impl DownloadJob {
             install_dir: None,
             created_at: now(),
             finished_at: None,
+            category: "games".into(),
         }
     }
 }
 
 const COLS: &str = "id, thread_id, title, creator, version, source, host, page_url, file_name, path,
-    state, bytes_done, bytes_total, error, attempts, retry_at, install_dir, created_at, finished_at";
+    state, bytes_done, bytes_total, error, attempts, retry_at, install_dir, created_at, finished_at, category";
 
 fn row(r: &rusqlite::Row) -> rusqlite::Result<DownloadJob> {
     Ok(DownloadJob {
@@ -141,6 +144,7 @@ fn row(r: &rusqlite::Row) -> rusqlite::Result<DownloadJob> {
         install_dir: r.get(16)?,
         created_at: r.get(17)?,
         finished_at: r.get(18)?,
+        category: r.get(19)?,
     })
 }
 
@@ -149,8 +153,8 @@ impl Db {
         let conn = self.conn();
         conn.execute(
             "INSERT INTO download_jobs (thread_id, title, creator, version, source, host, page_url, file_name, path,
-               state, bytes_done, bytes_total, error, attempts, retry_at, install_dir, created_at, finished_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
+               state, bytes_done, bytes_total, error, attempts, retry_at, install_dir, created_at, finished_at, category)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)",
             params![
                 j.thread_id,
                 j.title,
@@ -169,7 +173,8 @@ impl Db {
                 j.retry_at,
                 j.install_dir,
                 j.created_at,
-                j.finished_at
+                j.finished_at,
+                j.category
             ],
         )
         .map_err(err)?;

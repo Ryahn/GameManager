@@ -27,7 +27,7 @@ const games = Array.from({ length: 90 }, (_, i) => {
     overview:
       "You return to a [B]small seaside town[/B] after years away, only to find that nothing is quite how you left it. Build relationships, uncover the town's secrets, and decide who you want to become.\n\n[CENTER][SIZE=5]Features[/SIZE][/CENTER]\n[LIST]\n[*]A branching story with [U]multiple endings[/U]\n[*]Fully animated scenes\n[/LIST]\n[QUOTE=Developer]Thanks for playing &amp; supporting the game![/QUOTE]",
     authors: [{ name: ["Moonlit Studio", "PixelHeart", "Velvet Dev", "Nightcap Games"][i % 4] }],
-    category: "games",
+    category: i % 6 === 4 ? "comics" : i % 9 === 7 ? "animations" : "games",
     cover: cover(i, title),
     banner: cover(i + 1, title),
     previews: [cover(i + 3, "Screenshot 1"), cover(i + 4, "Screenshot 2"), cover(i + 5, "Screenshot 3")],
@@ -50,7 +50,7 @@ const toSummary = (g: (typeof games)[number]) => ({
   creator: g.authors[0].name,
   version: `v${g.version}`,
   developer: g.authors[0].name,
-  category: "games",
+  category: g.category,
   last_promoted: g.last_promoted,
   first_post_ts: g.last_promoted,
   is_new: g.id % 11 === 0,
@@ -65,6 +65,8 @@ let settings = {
   auth_mode: null as string | null,
   username: null as string | null,
   library_dir: null as string | null,
+  comics_dir: null as string | null,
+  animations_dir: null as string | null,
   theme: "dark",
   accent: "violet",
   ui_scale: 1,
@@ -174,7 +176,7 @@ const localGame = (id: number) => {
     in_library: library.has(id),
     ...rest,
     cached: g
-      ? { title: g.name, creator: g.authors[0].name, version: `v${g.version}`, cover: g.cover, url: g.url, prefixes: g.prefixes, last_promoted: g.last_promoted }
+      ? { title: g.name, creator: g.authors[0].name, version: `v${g.version}`, cover: g.cover, url: g.url, prefixes: g.prefixes, last_promoted: g.last_promoted, category: g.category }
       : null,
   };
 };
@@ -290,7 +292,7 @@ export function installMockIpc() {
           return authStatus();
         case "catalog_latest": {
           const q = args.query ?? {};
-          const list = [...games];
+          const list = games.filter((g) => g.category === (q.category ?? "games"));
           if (q.order === "rating") list.sort((a, b) => (b.rating.average ?? 0) - (a.rating.average ?? 0));
           const limit = q.limit ?? 30;
           const page = q.page ?? 1;
@@ -303,7 +305,7 @@ export function installMockIpc() {
             hits: games
               .filter((g) => g.name.toLowerCase().includes(q))
               .slice(0, 20)
-              .map((g) => ({ thread_id: g.id, title: g.name, creator: g.authors[0].name, url: g.url, category: "games", score: 1, cover: g.cover })),
+              .map((g) => ({ thread_id: g.id, title: g.name, creator: g.authors[0].name, url: g.url, category: g.category, score: 1, cover: g.cover })),
           };
         }
         case "catalog_thread": {
@@ -413,7 +415,14 @@ export function installMockIpc() {
           return null;
         case "library_scan": {
           scanCancelled = false;
-          const found = scanFixtures();
+          const kind = args.category ?? "games";
+          const found =
+            kind === "games"
+              ? scanFixtures()
+              : games
+                  .filter((g) => g.category === kind)
+                  .slice(0, 3)
+                  .map((g, i) => ({ name: i === 2 ? `${g.name} [v2].cbz` : g.name, title: g.name, version: i === 2 ? "2" : null, match: g, confident: true, linked: false }));
           await emit("scan-progress", { phase: "finding", done: 0, total: 0 });
           await delay(700);
           for (let i = 0; i < 4 && !scanCancelled; i++) {
@@ -427,7 +436,8 @@ export function installMockIpc() {
             title_guess: f.title,
             version_guess: f.version,
             engine: "ren_py",
-            targets: [{ path: `D:\\Games\\${f.name}\\Game.exe`, label: "Play", engine: "ren_py" }],
+            media_count: kind === "games" ? 0 : 24,
+          targets: kind === "games" ? [{ path: `D:\\Games\\${f.name}\\Game.exe`, label: "Play", engine: "ren_py" }] : [],
             linked_thread_id: f.linked || (f.match && local.get(f.match.id)?.install_dir && !library.has(f.match.id)) ? f.match!.id : null,
           linked_in_library: !!f.linked && library.has(f.match!.id),
             suggestion:
@@ -441,7 +451,8 @@ export function installMockIpc() {
           return null;
         case "library_import":
           for (const it of args.items) {
-            addTarget(it.thread_id, `${it.path}\\Game.exe`);
+            if ((it.category ?? "games") === "games") addTarget(it.thread_id, `${it.path}\\Game.exe`);
+            else ensure(it.thread_id).install_dir = it.path;
             ensure(it.thread_id).installed_version = it.version;
             library.set(it.thread_id, { has_update: false, last_seen_version: "" });
           }
