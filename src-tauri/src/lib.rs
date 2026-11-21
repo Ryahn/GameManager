@@ -16,6 +16,7 @@ mod launch;
 mod library;
 mod limiter;
 mod local_commands;
+mod media;
 mod notify;
 mod platform;
 mod settings;
@@ -102,7 +103,7 @@ pub fn run() {
             app.manage(Arc::new(sync::UpdateChecker::default()));
             app.manage(Arc::new(local_commands::ScanState::default()));
             let downloads = downloads::Downloads::load(&db_for_downloads);
-            downloads.set_library(tauri::async_runtime::block_on(settings_for_downloads.get()).library_dir);
+            downloads.set_folders(&tauri::async_runtime::block_on(settings_for_downloads.get()));
             app.manage(Arc::new(downloads));
             app.manage(Arc::new(f95::F95::default()));
             let boss_key = tauri::async_runtime::block_on(settings.get()).boss_key;

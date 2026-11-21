@@ -26,6 +26,8 @@ export interface Settings {
   auth_mode: AuthMode | null;
   username: string | null;
   library_dir: string | null;
+  comics_dir: string | null;
+  animations_dir: string | null;
   theme: "dark" | "light" | "system";
   accent: string;
   ui_scale: number;
@@ -48,6 +50,8 @@ export type SettingsPatch = Partial<
     Settings,
     | "onboarding_complete"
     | "library_dir"
+    | "comics_dir"
+    | "animations_dir"
     | "theme"
     | "accent"
     | "ui_scale"
@@ -183,6 +187,7 @@ export interface LocalGame {
     url: string;
     prefixes: string[];
     last_promoted: number | null;
+    category: string;
   } | null;
 }
 
@@ -230,6 +235,8 @@ export interface ScanFolder {
   linked_thread_id: number | null;
   /** Linked here AND in the library: nothing to do for this folder. */
   linked_in_library: boolean;
+  /** Comics/animations: images or videos found. */
+  media_count: number;
   suggestion: MatchSuggestion | null;
 }
 
@@ -243,6 +250,7 @@ export interface ImportItem {
   thread_id: number;
   path: string;
   version: string | null;
+  category?: string;
 }
 
 // ---------------------------------------------------------------- downloads
@@ -252,6 +260,7 @@ export interface GameCtx {
   title: string;
   creator: string;
   version: string;
+  category?: string;
 }
 
 export interface DownloadLink {
@@ -421,7 +430,7 @@ export const api = {
   play: (id: number, targetId?: number) => invoke<void>("game_play", { id, targetId: targetId ?? null }),
   running: () => invoke<number[]>("games_running"),
   openFolder: (id: number) => invoke<void>("game_open_folder", { id }),
-  scan: (dir: string) => invoke<ScanFolder[]>("library_scan", { dir }),
+  scan: (dir: string, category = "games") => invoke<ScanFolder[]>("library_scan", { dir, category }),
   cancelScan: () => invoke<void>("library_scan_cancel"),
   importScan: (items: ImportItem[]) =>
     invoke<{ linked: number; added_to_library: number; failed: string[] }>("library_import", { items }),

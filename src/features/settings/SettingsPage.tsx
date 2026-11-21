@@ -59,9 +59,10 @@ export function SettingsPage() {
     }
   };
 
-  const chooseFolder = async () => {
-    const picked = await openDialog({ directory: true, multiple: false, title: "Choose your games folder" });
-    if (typeof picked === "string") set({ library_dir: picked });
+  const chooseFolder = async (key: "library_dir" | "comics_dir" | "animations_dir" = "library_dir") => {
+    const what = key === "comics_dir" ? "comics" : key === "animations_dir" ? "animations" : "games";
+    const picked = await openDialog({ directory: true, multiple: false, title: `Choose your ${what} folder` });
+    if (typeof picked === "string") set({ [key]: picked } as Partial<Settings>);
   };
 
   return (
@@ -85,14 +86,30 @@ export function SettingsPage() {
           </div>
         </Section>
 
-        <Section title="Games folder" description="Where new downloads are installed.">
-          <div className="flex items-center gap-3">
-            <div className="min-w-0 flex-1 truncate rounded-lg border border-border bg-surface-2 px-3 py-2 font-mono text-[13px] text-muted" data-selectable>
-              {s.library_dir ?? "Not set"}
-            </div>
-            <Button onClick={chooseFolder}>
-              <FolderOpen /> Change
-            </Button>
+        <Section title="Folders" description="Where downloads are installed. Your own layout inside each folder is left as it is.">
+          <div className="space-y-3">
+            {(
+              [
+                ["Games", "library_dir", s.library_dir, null],
+                ["Comics", "comics_dir", s.comics_dir, "Comics"],
+                ["Animations", "animations_dir", s.animations_dir, "Animations"],
+              ] as const
+            ).map(([label, key, value, sub]) => (
+              <div key={key} className="flex items-center gap-3">
+                <span className="w-24 shrink-0 text-sm font-medium">{label}</span>
+                <div className="min-w-0 flex-1 truncate rounded-lg border border-border bg-surface-2 px-3 py-2 font-mono text-[13px] text-muted" data-selectable>
+                  {value ?? (sub && s.library_dir ? <span className="text-faint">{`Inside the games folder: ${sub}`}</span> : "Not set")}
+                </div>
+                <Button size="sm" onClick={() => chooseFolder(key)}>
+                  <FolderOpen /> Change
+                </Button>
+                {sub && value && (
+                  <Button size="sm" variant="ghost" onClick={() => set({ [key]: "" } as Partial<Settings>)}>
+                    Reset
+                  </Button>
+                )}
+              </div>
+            ))}
           </div>
         </Section>
 

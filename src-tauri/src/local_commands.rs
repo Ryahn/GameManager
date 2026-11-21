@@ -133,10 +133,21 @@ pub async fn folder_detect(dir: String) -> Result<Vec<detect::Candidate>, ApiErr
         .map_err(ApiError::internal)
 }
 
-/// Links a game to its folder: remembers the folder, adds the detected
-/// executables (best one as default) and the version if known.
-pub(crate) fn link_folder(db: &Db, id: i64, dir: &str, version: Option<String>) -> Result<usize, String> {
-    let found = detect::candidates(Path::new(dir));
+/// Links a title to its folder: remembers the folder and the version if
+/// known. For games it also adds the detected executables (best one as
+/// default); comics and animations need no executable.
+pub(crate) fn link_folder(
+    db: &Db,
+    id: i64,
+    dir: &str,
+    version: Option<String>,
+    kind: crate::media::Kind,
+) -> Result<usize, String> {
+    let found = if kind == crate::media::Kind::Games {
+        detect::candidates(Path::new(dir))
+    } else {
+        Vec::new()
+    };
     for c in &found {
         db.add_target(id, &c.path, &c.label, "")?;
     }
@@ -148,7 +159,16 @@ pub(crate) fn link_folder(db: &Db, id: i64, dir: &str, version: Option<String>) 
             ..Default::default()
         },
     )?;
-    Ok(found.len())
+    Ok(if kind == crate::media::Kind::Games { found.len() } else { 1 })
+}
+
+fn kind_of(db: &Db, id: i64) -> crate::media::Kind {
+    db.get(id)
+        .ok()
+        .flatten()
+        .and_then(|g| g.cached)
+        .map(|c| crate::media::Kind::parse(&c.category))
+        .unwrap_or(crate::media::Kind::Games)
 }
 
 #[tauri::command]
@@ -164,7 +184,8 @@ pub async fn game_link_folder(
     }
     let db2 = db.inner().clone();
     let d = dir.clone();
-    let n = tauri::async_runtime::spawn_blocking(move || link_folder(&db2, id, &d, version))
+    let kind = kind_of(&db, id);
+    let n = tauri::async_runtime::spawn_blocking(move || link_folder(&db2, id, &d, version, kind))
         .await
         .map_err(ApiError::internal)?
         .map_err(internal)?;
@@ -236,7 +257,9 @@ pub async fn library_scan(
     db: State<'_, Arc<Db>>,
     scan: State<'_, Arc<ScanState>>,
     dir: String,
+    category: Option<String>,
 ) -> Result<Vec<ScanFolder>, ApiError> {
+    let kind = crate::media::Kind::parse(category.as_deref().unwrap_or("games"));
     if !Path::new(&dir).is_dir() {
         return Err(invalid("That folder doesn't exist."));
     }
@@ -244,7 +267,7 @@ pub async fn library_scan(
         return Err(invalid("A scan is already running."));
     }
     scan.cancel.store(false, Ordering::SeqCst);
-    let result = run_scan(&app, &state, &db, &scan, dir).await;
+    let result = run_scan(&app, &state, &db, &scan, dir, kind).await;
     scan.busy.store(false, Ordering::SeqCst);
     result
 }
@@ -255,6 +278,7 @@ async fn run_scan(
     db: &Arc<Db>,
     scan: &ScanState,
     dir: String,
+    kind: crate::media::Kind,
 ) -> Result<Vec<ScanFolder>, ApiError> {
     let _ = app.emit(
         "scan-progress",
@@ -266,7 +290,13 @@ async fn run_scan(
     );
     let linked = db.linked_dirs().map_err(internal)?;
     let mut folders =
-        tauri::async_runtime::spawn_blocking(move || library::scan(Path::new(&dir), &linked))
+        tauri::async_runtime::spawn_blocking(move || {
+            if kind == crate::media::Kind::Games {
+                library::scan(Path::new(&dir), &linked)
+            } else {
+                library::scan_media(Path::new(&dir), kind, &linked)
+            }
+        })
             .await
             .map_err(ApiError::internal)?;
 
@@ -308,7 +338,7 @@ async fn run_scan(
             .search_with(&f.title_guess, 8, Priority::Background)
             .await
         {
-            Ok(r) => f.suggestion = library::pick_match(&f.title_guess, &r.hits),
+            Ok(r) => f.suggestion = library::pick_match(&f.title_guess, &r.hits, kind),
             // Keep the folders; the user can match the rest by hand.
             Err(ApiError::RateLimited { .. }) => break,
             Err(ApiError::NotSignedIn) | Err(ApiError::Unauthorized { .. }) => break,
@@ -332,6 +362,8 @@ pub struct ImportItem {
     pub thread_id: i64,
     pub path: String,
     pub version: Option<String>,
+    #[serde(default)]
+    pub category: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -356,7 +388,8 @@ pub async fn library_import(
         let db2 = db.inner().clone();
         let path = it.path.clone();
         let r = tauri::async_runtime::spawn_blocking(move || {
-            link_folder(&db2, it.thread_id, &path, it.version)
+            let kind = crate::media::Kind::parse(it.category.as_deref().unwrap_or("games"));
+            link_folder(&db2, it.thread_id, &path, it.version, kind)
         })
         .await
         .map_err(ApiError::internal)?;

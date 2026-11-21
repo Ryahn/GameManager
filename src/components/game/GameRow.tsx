@@ -4,6 +4,7 @@ import { ErrorPanel } from "@/components/ui/primitives";
 import { useLibraryIds, useLibraryToggle, useLocalMap, usePlay, useRunning } from "@/hooks/queries";
 import { GameCard, GameCardSkeleton, GameGrid, type GameCardData } from "./GameCard";
 import { withLocal } from "./mappers";
+import { api } from "@/lib/ipc";
 
 /** A titled block of game cards with loading, error and empty handling. */
 export function GameRow({
@@ -58,7 +59,9 @@ export function GameRow({
                   game={withLocal(g, local.get(g.id))}
                   inLibrary={library.has(g.id)}
                   onToggleLibrary={(add) => toggle(g, add)}
-                  onPlay={() => play.mutate({ id: g.id, title: g.title })}
+                  onPlay={() =>
+                    g.category && g.category !== "games" ? void api.openFolder(g.id) : play.mutate({ id: g.id, title: g.title })
+                  }
                   running={running.data?.has(g.id)}
                 />
               ))}

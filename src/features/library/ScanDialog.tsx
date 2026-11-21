@@ -11,6 +11,7 @@ import { keys, useSearch, useSettings } from "@/hooks/queries";
 import { api, type Events, type MatchSuggestion, type ScanFolder, type ScanProgress } from "@/lib/ipc";
 import { friendlyError } from "@/lib/errors";
 import { cn } from "@/lib/utils";
+import { kindMeta, type Kind } from "@/lib/kinds";
 
 type Step = "pick" | "scanning" | "review";
 
@@ -61,8 +62,15 @@ function MatchPicker({ initial, onPick, onCancel }: { initial: string; onPick: (
   );
 }
 
-export function ScanDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
+export function ScanDialog({ open, onOpenChange, kind = "games" }: { open: boolean; onOpenChange: (v: boolean) => void; kind?: Kind }) {
   const settings = useSettings();
+  // The folder this type lives in: its own, or Comics/Animations inside the games folder.
+  const sep = settings.data?.library_dir?.includes("\\") ? "\\" : "/";
+  const home =
+    kind === "games"
+      ? settings.data?.library_dir
+      : ((kind === "comics" ? settings.data?.comics_dir : settings.data?.animations_dir) ??
+        (settings.data?.library_dir ? `${settings.data.library_dir}${sep}${kind === "comics" ? "Comics" : "Animations"}` : null));
   const qc = useQueryClient();
   const [step, setStep] = useState<Step>("pick");
   const [progress, setProgress] = useState<ScanProgress | null>(null);
@@ -88,7 +96,7 @@ export function ScanDialog({ open, onOpenChange }: { open: boolean; onOpenChange
     setStep("scanning");
     setProgress({ phase: "finding", done: 0, total: 0 });
     try {
-      const found = await api.scan(dir);
+      const found = await api.scan(dir, kind);
       setRows(
         found.map((f) => ({
           folder: f,
@@ -104,7 +112,7 @@ export function ScanDialog({ open, onOpenChange }: { open: boolean; onOpenChange
   };
 
   const choose = async () => {
-    const picked = await openDialog({ directory: true, multiple: false, title: "Choose a folder with games", defaultPath: settings.data?.library_dir ?? undefined });
+    const picked = await openDialog({ directory: true, multiple: false, title: `Choose a folder with ${kindMeta(kind).many}`, defaultPath: home ?? undefined });
     if (typeof picked === "string") void run(picked);
   };
 
@@ -119,7 +127,7 @@ export function ScanDialog({ open, onOpenChange }: { open: boolean; onOpenChange
     setImporting(true);
     try {
       const r = await api.importScan(
-        selected.map((s) => ({ thread_id: s.match!.thread_id, path: s.folder.path, version: s.folder.version_guess })),
+        selected.map((s) => ({ thread_id: s.match!.thread_id, path: s.folder.path, version: s.folder.version_guess, category: kind })),
       );
       qc.invalidateQueries({ queryKey: keys.local });
       qc.invalidateQueries({ queryKey: ["bookmarks"] });
@@ -140,8 +148,8 @@ export function ScanDialog({ open, onOpenChange }: { open: boolean; onOpenChange
   return (
     <Dialog open={open} onOpenChange={(v) => (step === "scanning" ? undefined : onOpenChange(v))}>
       <DialogContent
-        title="Find games on this computer"
-        description="Scans a folder for installed games and matches them to the catalog. Nothing is moved or changed on disk."
+        title={`Find ${kindMeta(kind).many} on this computer`}
+        description={`Scans a folder for ${kindMeta(kind).many} you already have and matches them to the catalog. Your folders are used as they are; nothing is moved or changed.`}
         className="w-[min(94vw,880px)]"
       >
         {step === "pick" && (
@@ -149,11 +157,11 @@ export function ScanDialog({ open, onOpenChange }: { open: boolean; onOpenChange
             <div className="flex items-center gap-3 rounded-xl border border-border bg-surface-2 p-4">
               <FolderSearch className="size-5 shrink-0 text-accent" />
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium">Your games folder</p>
-                <p className="truncate font-mono text-[12.5px] text-muted">{settings.data?.library_dir ?? "Not set"}</p>
+                <p className="text-sm font-medium">Your {kindMeta(kind).many} folder</p>
+                <p className="truncate font-mono text-[12.5px] text-muted">{home ?? "Not set"}</p>
               </div>
-              {settings.data?.library_dir && (
-                <Button variant="primary" onClick={() => run(settings.data!.library_dir!)}>
+              {home && (
+                <Button variant="primary" onClick={() => run(home)}>
                   Scan this folder
                 </Button>
               )}
@@ -225,7 +233,9 @@ export function ScanDialog({ open, onOpenChange }: { open: boolean; onOpenChange
                             {f.folder_name}
                           </p>
                           <p className="truncate text-[12px] text-faint">
-                            {f.targets[0]?.label ?? "No executable"}
+                            {kind === "games"
+                              ? (f.targets[0]?.label ?? "No executable")
+                              : `${f.media_count} ${kind === "animations" ? (f.media_count === 1 ? "video" : "videos") : f.media_count === 1 ? "file" : "pages/files"}`}
                             {f.version_guess ? ` · v${f.version_guess}` : ""}
                           </p>
                         </div>

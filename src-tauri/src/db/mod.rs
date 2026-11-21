@@ -83,6 +83,8 @@ pub struct CachedGame {
     pub url: String,
     pub prefixes: Vec<String>,
     pub last_promoted: Option<i64>,
+    /// "games", "comics" or "animations".
+    pub category: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -176,11 +178,12 @@ impl Db {
         {
             let mut cache = tx
                 .prepare(
-                    "INSERT INTO games (thread_id, title, creator, version, cover, url, prefixes, last_promoted, cached_at)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+                    "INSERT INTO games (thread_id, title, creator, version, cover, url, prefixes, last_promoted, cached_at, category)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
                      ON CONFLICT(thread_id) DO UPDATE SET title=excluded.title, creator=excluded.creator,
                        version=excluded.version, cover=excluded.cover, url=excluded.url,
-                       prefixes=excluded.prefixes, last_promoted=excluded.last_promoted, cached_at=excluded.cached_at",
+                       prefixes=excluded.prefixes, last_promoted=excluded.last_promoted, cached_at=excluded.cached_at,
+                       category=CASE WHEN ?10 = '' THEN games.category ELSE excluded.category END",
                 )
                 .map_err(err)?;
             let mut user = tx
@@ -202,7 +205,9 @@ impl Db {
                         t.url,
                         serde_json::to_string(&t.prefixes).unwrap_or_default(),
                         t.last_promoted,
-                        ts
+                        ts,
+                        // Unknown stays as it was (summaries don't always carry it).
+                        if t.category.is_empty() { String::new() } else { crate::media::Kind::parse(&t.category).as_str().to_string() }
                     ])
                     .map_err(err)?;
                 user.execute(params![t.thread_id, in_library, ts]).map_err(err)?;
@@ -269,7 +274,7 @@ impl Db {
     const SELECT: &'static str = "SELECT u.thread_id, u.in_library, u.play_status, u.rating, u.notes, u.labels,
             u.installed_version, u.finished_version, u.last_played_version, u.skipped_version,
             u.install_dir, u.added_at, u.last_played_at, u.playtime_secs,
-            g.title, g.creator, g.version, g.cover, g.url, g.prefixes, g.last_promoted
+            g.title, g.creator, g.version, g.cover, g.url, g.prefixes, g.last_promoted, g.category
          FROM user_games u LEFT JOIN games g ON g.thread_id = u.thread_id";
 
     fn row(r: &rusqlite::Row) -> rusqlite::Result<LocalGame> {
@@ -286,6 +291,7 @@ impl Db {
                     .and_then(|s| serde_json::from_str(&s).ok())
                     .unwrap_or_default(),
                 last_promoted: r.get(20)?,
+                category: r.get::<_, Option<String>>(21)?.unwrap_or_else(|| "games".into()),
             }),
             None => None,
         };

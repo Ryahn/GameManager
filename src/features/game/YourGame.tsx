@@ -8,6 +8,7 @@ import { Badge, Input, Section, Tooltip } from "@/components/ui/primitives";
 import { useLocalActions, useLocalLibrary, usePlay, useRunning, useSessions, useUpdateLocal } from "@/hooks/queries";
 import { useUi } from "@/state/ui";
 import { useOs } from "@/lib/platform";
+import { kindMeta, type Kind } from "@/lib/kinds";
 import { api, type LocalGame } from "@/lib/ipc";
 import { friendlyError } from "@/lib/errors";
 import { formatPlaytime, sameVersion } from "@/lib/play";
@@ -45,7 +46,18 @@ export function useLocate(id: number, onDone?: () => void) {
 
 // ------------------------------------------------------------ Files & launch
 
-export function FilesPanel({ id, local, latest }: { id: number; local: LocalGame | null | undefined; latest: string }) {
+export function FilesPanel({
+  id,
+  local,
+  latest,
+  kind = "games",
+}: {
+  id: number;
+  local: LocalGame | null | undefined;
+  latest: string;
+  kind?: Kind;
+}) {
+  const isGame = kind === "games";
   const { removeTarget, setDefault } = useLocalActions(id);
   const update = useUpdateLocal(id);
   const play = usePlay();
@@ -67,17 +79,21 @@ export function FilesPanel({ id, local, latest }: { id: number; local: LocalGame
         <div className="mx-auto mb-4 grid size-14 place-items-center rounded-2xl bg-accent/12 text-accent">
           <FolderSearch className="size-7" />
         </div>
-        <h3 className="text-lg font-semibold">Already have this game?</h3>
+        <h3 className="text-lg font-semibold">Already have this {kindMeta(kind).one}?</h3>
         <p className="mt-2 text-sm text-muted">
-          Point to its folder and the launcher finds the executable, tracks your playtime and tells you when your copy is out of date.
+          {isGame
+            ? "Point to its folder and the launcher finds the executable, tracks your playtime and tells you when your copy is out of date."
+            : "Point to its folder (or file) and the launcher remembers where it is and tells you when your copy is out of date."}
         </p>
         <div className="mt-6 flex justify-center gap-2">
           <Button variant="primary" onClick={locate.pickFolder} loading={locate.busy}>
-            <FolderOpen /> Choose game folder
+            <FolderOpen /> Choose {isGame ? "game " : ""}folder
           </Button>
-          <Button variant="ghost" onClick={locate.pickExe}>
-            Pick the program instead
-          </Button>
+          {isGame && (
+            <Button variant="ghost" onClick={locate.pickExe}>
+              Pick the program instead
+            </Button>
+          )}
         </div>
       </div>
     );
@@ -85,6 +101,7 @@ export function FilesPanel({ id, local, latest }: { id: number; local: LocalGame
 
   return (
     <div className="grid max-w-3xl gap-5">
+      {isGame && (
       <Section
         title="Launch"
         description="The default is used by Play, the tray and the library."
@@ -135,6 +152,7 @@ export function FilesPanel({ id, local, latest }: { id: number; local: LocalGame
           </ul>
         )}
       </Section>
+      )}
 
       <Section title="Installed copy">
         <div className="space-y-4">

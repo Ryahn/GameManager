@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useParams, useRouter } from "@tanstack/react-router";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { ArrowLeft, Check, Download, ExternalLink, Eye, Heart, Play, Plus, Star, Trash2 } from "lucide-react";
+import { ArrowLeft, Check, Download, ExternalLink, Eye, FolderOpen, Heart, Play, Plus, Star, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge, ErrorPanel, Select, Skeleton, Tooltip } from "@/components/ui/primitives";
 import { Cover } from "@/components/game/GameCard";
@@ -10,6 +10,8 @@ import { useLibraryIds, useLocalGame, usePlay, useRunning, useThread, useToggleL
 import { useUi } from "@/state/ui";
 import { PLAY_STATUSES, formatPlaytime, sameVersion } from "@/lib/play";
 import { cleanVersion, cn, imageSrc, statusTone, timeAgo } from "@/lib/utils";
+import { kindOf } from "@/lib/kinds";
+import { api } from "@/lib/ipc";
 import { FilesPanel, HistoryPanel, NotesPanel, useLocate } from "./YourGame";
 import { DownloadDialog } from "./DownloadDialog";
 
@@ -72,7 +74,10 @@ export function GamePage() {
   const version = cleanVersion(t.version);
   const hero = t.banner || t.cover;
   const local = localQ.data;
-  const installed = (local?.targets.length ?? 0) > 0;
+  const kind = kindOf(t.category);
+  const isGame = kind === "games";
+  // Games need something to launch; comics and animations just their folder.
+  const installed = isGame ? (local?.targets.length ?? 0) > 0 : !!local?.install_dir;
   const isRunning = running.data?.has(threadId) ?? false;
   const installedVersion = cleanVersion(local?.installed_version);
   const behind = !!installedVersion && !!version && !sameVersion(installedVersion, version);
@@ -114,9 +119,15 @@ export function GamePage() {
                     <Download /> Update to v{version}
                   </Button>
                 )}
-                <Button variant="primary" size="lg" loading={play.isPending} onClick={() => play.mutate({ id: threadId, title: t.title })}>
-                  <Play className="fill-current" /> Play
-                </Button>
+                {isGame ? (
+                  <Button variant="primary" size="lg" loading={play.isPending} onClick={() => play.mutate({ id: threadId, title: t.title })}>
+                    <Play className="fill-current" /> Play
+                  </Button>
+                ) : (
+                  <Button variant="primary" size="lg" onClick={() => void api.openFolder(threadId)}>
+                    <FolderOpen /> Open folder
+                  </Button>
+                )}
               </>
             ) : (
               <Button variant="primary" size="lg" onClick={() => setDownloadOpen(true)}>
@@ -214,7 +225,7 @@ export function GamePage() {
       </div>
 
       <div role="tablist" aria-label="Game sections" className="mt-6 flex gap-1 border-b border-border">
-        {TABS.map(({ value: k, label }) => (
+        {TABS.filter((x) => isGame || x.value !== "history").map(({ value: k, label: l }) => ({ value: k, label: !isGame && k === "files" ? "Files" : l })).map(({ value: k, label }) => (
           <button
             key={k}
             role="tab"
@@ -301,7 +312,7 @@ export function GamePage() {
             )}
           </dl>
         )}
-        {tab === "files" && <FilesPanel id={threadId} local={local} latest={t.version} />}
+        {tab === "files" && <FilesPanel id={threadId} local={local} latest={t.version} kind={kind} />}
         {tab === "notes" && <NotesPanel id={threadId} local={local} latest={t.version} />}
         {tab === "history" && <HistoryPanel id={threadId} local={local} />}
       </div>
@@ -309,7 +320,7 @@ export function GamePage() {
       <DownloadDialog
         open={downloadOpen}
         onOpenChange={setDownloadOpen}
-        game={{ thread_id: threadId, title: t.title, creator: t.creator || t.developer, version: t.version }}
+        game={{ thread_id: threadId, title: t.title, creator: t.creator || t.developer, version: t.version, category: kind }}
       />
 
       {shot && (
