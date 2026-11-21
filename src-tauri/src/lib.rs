@@ -19,6 +19,7 @@ mod local_commands;
 mod media;
 mod notify;
 mod platform;
+mod reader;
 mod settings;
 mod sync;
 mod system;
@@ -77,6 +78,13 @@ pub fn run() {
                 responder.respond(cache.handle(&path).await);
             });
         })
+        .register_asynchronous_uri_scheme_protocol("gmmedia", |ctx, request, responder| {
+            let roots = ctx.app_handle().state::<Arc<reader::MediaRoots>>().inner().clone();
+            let path = request.uri().path().to_string();
+            tauri::async_runtime::spawn_blocking(move || {
+                responder.respond(reader::serve(&roots, &path));
+            });
+        })
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
             let cache_dir = app.path().app_cache_dir()?;
@@ -98,6 +106,7 @@ pub fn run() {
             tauri::async_runtime::block_on(auth::restore(&api, &http, mode));
 
             app.manage(ImageCache::new(cache_dir.join("images")));
+            app.manage(Arc::new(reader::MediaRoots::default()));
             app.manage(db);
             app.manage(Arc::new(launch::Launcher::default()));
             app.manage(Arc::new(sync::UpdateChecker::default()));
@@ -210,6 +219,11 @@ pub fn run() {
             local_commands::game_play,
             local_commands::games_running,
             local_commands::game_open_folder,
+            reader::media_book,
+            reader::media_progress,
+            reader::media_progress_set,
+            reader::media_continue,
+            reader::media_open_external,
             local_commands::library_scan,
             local_commands::library_scan_cancel,
             local_commands::library_import,

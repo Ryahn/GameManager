@@ -1,7 +1,8 @@
 import { useState } from "react";
-import { useParams, useRouter } from "@tanstack/react-router";
+import { Link, useParams, useRouter } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { ArrowLeft, Check, Download, ExternalLink, Eye, FolderOpen, Heart, Play, Plus, Star, Trash2 } from "lucide-react";
+import { ArrowLeft, BookOpen, Check, Download, ExternalLink, Eye, FolderOpen, Heart, Play, Plus, Star, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge, ErrorPanel, Select, Skeleton, Tooltip } from "@/components/ui/primitives";
 import { Cover } from "@/components/game/GameCard";
@@ -25,6 +26,29 @@ const TABS: { value: Tab; label: string }[] = [
   { value: "notes", label: "Notes" },
   { value: "history", label: "Play history" },
 ];
+
+/** Read, or pick up where the reader left off. */
+function ReadButton({ id }: { id: number }) {
+  const progress = useQuery({ queryKey: ["reading-progress", id], queryFn: () => api.readingProgress(id), staleTime: 0 });
+  const p = progress.data;
+  const resume = p && p.pages_total > 0 && p.page > 0 && p.page < p.pages_total - 1;
+  return (
+    <>
+      <Link
+        to="/read/$id"
+        params={{ id: String(id) }}
+        className="inline-flex h-11 items-center gap-2 rounded-lg bg-accent px-5 text-[15px] font-medium text-accent-fg shadow-sm transition-colors hover:bg-accent-hover [&_svg]:size-4"
+      >
+        <BookOpen /> {resume ? `Continue · page ${p.page + 1} of ${p.pages_total}` : "Read"}
+      </Link>
+      <Tooltip content="Open folder" side="bottom">
+        <Button variant="outline" size="icon" className="size-11" aria-label="Open folder" onClick={() => void api.openFolder(id)}>
+          <FolderOpen />
+        </Button>
+      </Tooltip>
+    </>
+  );
+}
 
 export function GamePage() {
   const { id } = useParams({ strict: false }) as { id?: string };
@@ -123,6 +147,8 @@ export function GamePage() {
                   <Button variant="primary" size="lg" loading={play.isPending} onClick={() => play.mutate({ id: threadId, title: t.title })}>
                     <Play className="fill-current" /> Play
                   </Button>
+                ) : kind === "comics" ? (
+                  <ReadButton id={threadId} />
                 ) : (
                   <Button variant="primary" size="lg" onClick={() => void api.openFolder(threadId)}>
                     <FolderOpen /> Open folder

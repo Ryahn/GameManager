@@ -7,6 +7,7 @@ import { api, type DeepLink, type Events, type LatestQuery, type LocalGame, type
 import { formatPlaytime } from "@/lib/play";
 import { useUi } from "@/state/ui";
 import { friendlyError } from "@/lib/errors";
+import type { Kind } from "@/lib/kinds";
 
 export const keys = {
   appInfo: ["app-info"] as const,
@@ -174,6 +175,23 @@ export function usePlay() {
     onError: toastError("Couldn't start the game"),
   });
 }
+
+/**
+ * The primary action on an installed item: play a game, read a comic, open
+ * an animation's folder.
+ */
+export function useOpenItem() {
+  const play = usePlay();
+  const navigate = useNavigate();
+  return (item: { id: number; title?: string; category?: Kind }) => {
+    if (item.category === "comics") void navigate({ to: "/read/$id", params: { id: String(item.id) } });
+    else if (item.category === "animations") api.openFolder(item.id).catch(toastError("Couldn't open the folder"));
+    else play.mutate({ id: item.id, title: item.title });
+  };
+}
+
+export const useContinueReading = () =>
+  useQuery({ queryKey: ["continue-reading"], queryFn: () => api.continueReading(12), staleTime: 10_000 });
 
 /** Listens for pushes from Rust and keeps the cache in step. Mount once. */
 export function useBackendEvents() {

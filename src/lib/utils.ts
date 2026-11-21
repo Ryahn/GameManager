@@ -18,6 +18,12 @@ export function imageSrc(url: string | null | undefined): string | undefined {
   return isWindows ? `http://gmimg.localhost/${encoded}` : `gmimg://localhost/${encoded}`;
 }
 
+/** A reader page from the local media scheme (served only from opened books). */
+export function mediaSrc(path: string): string {
+  if (!path.startsWith("/")) return path; // already a full URL (dev mock)
+  return isWindows ? `http://gmmedia.localhost${path}` : `gmmedia://localhost${path}`;
+}
+
 export function timeAgo(unixSeconds: number | null | undefined, now = Date.now()): string {
   if (!unixSeconds) return "";
   const diff = Math.max(0, now / 1000 - unixSeconds);

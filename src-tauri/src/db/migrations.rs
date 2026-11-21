@@ -91,6 +91,17 @@ const MIGRATIONS: &[&str] = &[
     // v3: comics and animations
     "ALTER TABLE games ADD COLUMN category TEXT NOT NULL DEFAULT 'games';
      ALTER TABLE download_jobs ADD COLUMN category TEXT NOT NULL DEFAULT 'games';",
+    // v4: where the reader left off in each comic
+    "CREATE TABLE reading_progress (
+        thread_id   INTEGER PRIMARY KEY,
+        chapter     INTEGER NOT NULL DEFAULT 0,
+        page        INTEGER NOT NULL DEFAULT 0,
+        pages_total INTEGER NOT NULL DEFAULT 0,
+        mode        TEXT NOT NULL DEFAULT 'single',
+        rtl         INTEGER NOT NULL DEFAULT 0,
+        fit         TEXT NOT NULL DEFAULT 'height',
+        updated_at  INTEGER NOT NULL DEFAULT 0
+     );",
 ];
 
 pub fn run(conn: &mut Connection, path: Option<&Path>) -> Result<(), String> {
@@ -101,9 +112,10 @@ pub fn run(conn: &mut Connection, path: Option<&Path>) -> Result<(), String> {
         return Ok(());
     }
     if current > 0
-        && let Some(p) = path {
-            backup(conn, p, current)?;
-        }
+        && let Some(p) = path
+    {
+        backup(conn, p, current)?;
+    }
     for (i, sql) in MIGRATIONS.iter().enumerate().skip(current) {
         let tx = conn.transaction().map_err(|e| e.to_string())?;
         tx.execute_batch(sql)

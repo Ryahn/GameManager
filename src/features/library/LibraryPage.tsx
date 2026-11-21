@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Badge, EmptyState, ErrorPanel, Input, PageHeader, Segmented, Select } from "@/components/ui/primitives";
 import { Cover, GameCard, GameCardSkeleton, GameGrid, type GameCardData } from "@/components/game/GameCard";
 import { fromBookmark, fromLocal, withLocal } from "@/components/game/mappers";
-import { keys, useLibrary, useLibraryToggle, useLocalLibrary, usePlay, useRunning } from "@/hooks/queries";
+import { keys, useLibrary, useLibraryToggle, useLocalLibrary, useOpenItem, useRunning } from "@/hooks/queries";
 import { useUi } from "@/state/ui";
 import { api, type LocalGame, type PlayStatus } from "@/lib/ipc";
 import { friendlyError } from "@/lib/errors";
@@ -112,7 +112,6 @@ export function LibraryPage() {
   const library = useLibrary();
   const localQ = useLocalLibrary();
   const toggle = useLibraryToggle();
-  const play = usePlay();
   const running = useRunning();
   const qc = useQueryClient();
   const view = useUi((s) => s.libraryView);
@@ -179,10 +178,8 @@ export function LibraryPage() {
     return [...list].sort(by[sort]);
   }, [all, text, show, status, label, sort]);
 
-  const onPlay = (e: Entry) =>
-    e.card.category && e.card.category !== "games"
-      ? void api.openFolder(e.card.id)
-      : play.mutate({ id: e.card.id, title: e.card.title });
+  const open = useOpenItem();
+  const onPlay = (e: Entry) => open(e.card);
 
   const moveTo = async (id: number, to: PlayStatus) => {
     try {

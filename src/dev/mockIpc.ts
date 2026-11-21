@@ -86,6 +86,8 @@ const library = new Map<number, { has_update: boolean; last_seen_version: string
   [100005, { has_update: true, last_seen_version: "v0.5.0" }],
   [100009, { has_update: false, last_seen_version: "" }],
   [100014, { has_update: false, last_seen_version: "" }],
+  [100004, { has_update: false, last_seen_version: "" }],
+  [100010, { has_update: false, last_seen_version: "" }],
 ]);
 
 // ---- local library (installed games, playtime, notes)
@@ -163,6 +165,32 @@ const addTarget = (id: number, path: string) => {
     labels: ["Favourite", "Replay later"],
   });
 }
+// Seed: two comics on disk (one in chapters), and reading progress.
+ensure(100004).install_dir = "D:\\Comics\\Summer Days";
+ensure(100010).install_dir = "D:\\Comics\\Long Story";
+const progress = new Map<number, Record<string, unknown>>([
+  [100010, { thread_id: 100010, chapter: 1, page: 14, pages_total: 36, mode: "single", rtl: false, fit: "height", updated_at: now - 600 }],
+]);
+
+/** A numbered placeholder page; every seventh page is a wide spread. */
+const mockPage = (n: number, hue: number) => {
+  const wide = n % 7 === 6;
+  const [w, h] = wide ? [1600, 1100] : [800, 1150];
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="hsl(${hue},45%,30%)"/><stop offset="1" stop-color="hsl(${hue + 40},55%,14%)"/></linearGradient></defs><rect width="100%" height="100%" fill="url(#g)"/><rect x="40" y="40" width="${w - 80}" height="${h - 80}" fill="none" stroke="rgba(255,255,255,.25)" stroke-width="4"/><text x="50%" y="50%" fill="white" font-family="sans-serif" font-size="140" font-weight="700" text-anchor="middle" dominant-baseline="middle">${n}</text>${wide ? `<text x="50%" y="62%" fill="rgba(255,255,255,.6)" font-family="sans-serif" font-size="40" text-anchor="middle">spread</text>` : ""}</svg>`;
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+};
+const mockBook = (id: number) => {
+  const dir = local.get(id)?.install_dir ?? "";
+  const chapters =
+    id === 100010
+      ? [12, 10, 14].map((count, c) => ({
+          name: `Chapter ${c + 1}`,
+          pages: Array.from({ length: count }, (_, i) => ({ src: mockPage(i + 1, 200 + c * 50), name: `${String(i + 1).padStart(2, "0")}.jpg` })),
+        }))
+      : [{ name: "Summer Days", pages: Array.from({ length: 20 }, (_, i) => ({ src: mockPage(i + 1, 20), name: `p${i + 1}.png` })) }];
+  return { root: dir, chapters, other_files: id === 100010 ? [`${dir}\\Artbook.pdf`] : [] };
+};
+
 const running = new Set<number>();
 let scanCancelled = false;
 
@@ -412,6 +440,24 @@ export function installMockIpc() {
           return null;
         }
         case "game_open_folder":
+          return null;
+        case "media_book":
+          if (!local.get(args.id)?.install_dir) throw { kind: "invalid", message: "This comic has no folder yet." };
+          return { book: mockBook(args.id), progress: progress.get(args.id) ?? null };
+        case "media_progress":
+          return progress.get(args.id) ?? null;
+        case "media_progress_set":
+          progress.set(args.progress.thread_id, { ...args.progress, updated_at: Math.floor(Date.now() / 1000) });
+          return null;
+        case "media_continue":
+          return [...progress.values()]
+            .filter((p) => (p.pages_total as number) > 0 && (p.page as number) < (p.pages_total as number) - 1)
+            .sort((a, b) => (b.updated_at as number) - (a.updated_at as number))
+            .map((p) => {
+              const g = games.find((x) => x.id === p.thread_id);
+              return { thread_id: p.thread_id, title: g?.name ?? "", cover: g?.cover ?? null, page: p.page, pages_total: p.pages_total, updated_at: p.updated_at };
+            });
+        case "media_open_external":
           return null;
         case "library_scan": {
           scanCancelled = false;

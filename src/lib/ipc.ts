@@ -382,6 +382,48 @@ export interface DeepLink {
 /** Typed by the user to go past the daily download limit. */
 export const CONFIRM_PHRASE = "download anyway";
 
+export interface ReaderPage {
+  /** Path for the local media scheme; see mediaSrc. */
+  src: string;
+  name: string;
+}
+
+export interface ReaderChapter {
+  name: string;
+  pages: ReaderPage[];
+}
+
+export interface Book {
+  root: string;
+  chapters: ReaderChapter[];
+  /** Files the reader can't show (PDF), to open in another app. */
+  other_files: string[];
+}
+
+export type ReadMode = "single" | "double" | "scroll";
+export type FitMode = "height" | "width" | "original";
+
+export interface ReadingProgress {
+  thread_id: number;
+  chapter: number;
+  /** Page index across the whole book. */
+  page: number;
+  pages_total: number;
+  mode: ReadMode;
+  rtl: boolean;
+  fit: FitMode;
+  updated_at: number;
+}
+
+export interface ContinueItem {
+  thread_id: number;
+  title: string;
+  cover: string | null;
+  page: number;
+  pages_total: number;
+  updated_at: number;
+}
+
 export type ApiError =
   | { kind: "not_signed_in" }
   | { kind: "unauthorized"; message: string }
@@ -430,6 +472,12 @@ export const api = {
   play: (id: number, targetId?: number) => invoke<void>("game_play", { id, targetId: targetId ?? null }),
   running: () => invoke<number[]>("games_running"),
   openFolder: (id: number) => invoke<void>("game_open_folder", { id }),
+
+  openBook: (id: number) => invoke<{ book: Book; progress: ReadingProgress | null }>("media_book", { id }),
+  readingProgress: (id: number) => invoke<ReadingProgress | null>("media_progress", { id }),
+  saveProgress: (progress: ReadingProgress) => invoke<void>("media_progress_set", { progress }),
+  continueReading: (limit = 12) => invoke<ContinueItem[]>("media_continue", { limit }),
+  openExternal: (path: string) => invoke<void>("media_open_external", { path }),
   scan: (dir: string, category = "games") => invoke<ScanFolder[]>("library_scan", { dir, category }),
   cancelScan: () => invoke<void>("library_scan_cancel"),
   importScan: (items: ImportItem[]) =>

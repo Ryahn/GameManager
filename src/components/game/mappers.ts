@@ -1,4 +1,4 @@
-import type { Bookmark, Handiwork, LocalGame, SearchHit, ThreadSummary } from "@/lib/ipc";
+import type { Bookmark, ContinueItem, Handiwork, LocalGame, SearchHit, ThreadSummary } from "@/lib/ipc";
 import type { GameCardData } from "./GameCard";
 import { kindOf } from "@/lib/kinds";
 
@@ -49,6 +49,16 @@ export const withLocal = (g: GameCardData, local: LocalGame | undefined): GameCa
   const installed = category === "games" ? local.targets.length > 0 : !!local.install_dir;
   return { ...g, category, installed, playStatus: local.play_status };
 };
+
+/** A comic on the "Continue reading" row. */
+export const fromContinue = (c: ContinueItem): GameCardData => ({
+  id: c.thread_id,
+  title: c.title || `Thread ${c.thread_id}`,
+  cover: c.cover,
+  category: "comics",
+  installed: true,
+  reading: { page: c.page, total: c.pages_total },
+});
 
 /** A card from the offline cache, for when the server can't be reached. */
 export const fromLocal = (l: LocalGame): GameCardData =>
