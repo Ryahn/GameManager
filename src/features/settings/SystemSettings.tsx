@@ -100,6 +100,26 @@ function PinForm({ enabled, onDone }: { enabled: boolean; onDone: () => void }) 
   );
 }
 
+function AutoUpdateRow() {
+  const qc = useQueryClient();
+  const settings = useQuery({ queryKey: keys.settings, queryFn: api.settings });
+  return (
+    <Row label="Check for updates automatically" hint="Looks every few hours and shows a banner when a new version is ready. Nothing installs without you.">
+      <Switch
+        label="Check for updates automatically"
+        checked={settings.data?.auto_update_check ?? true}
+        onChange={async (v) => {
+          try {
+            qc.setQueryData(keys.settings, await api.updateSettings({ auto_update_check: v }));
+          } catch (e) {
+            fail("Couldn't save")(e);
+          }
+        }}
+      />
+    </Row>
+  );
+}
+
 function WindowsGames() {
   const qc = useQueryClient();
   const os = useOs();
@@ -308,6 +328,7 @@ export function SystemSettings({ version }: { version?: string }) {
       </Section>
 
       <Section title="Updates">
+        {s?.updater_configured && <AutoUpdateRow />}
         <Row
           label={`F95 Game Manager ${version ?? ""}`}
           hint={
@@ -330,7 +351,17 @@ export function SystemSettings({ version }: { version?: string }) {
               variant="outline"
               disabled={!s?.updater_configured}
               loading={busy === "check"}
-              onClick={() => busyRun("check", api.updateCheck, setUpdate, "Couldn't check for updates")}
+              onClick={() =>
+                busyRun(
+                  "check",
+                  api.updateCheck,
+                  (u) => {
+                    setUpdate(u);
+                    qc.setQueryData(["update-status"], u);
+                  },
+                  "Couldn't check for updates",
+                )
+              }
             >
               <RefreshCw /> Check for updates
             </Button>

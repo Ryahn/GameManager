@@ -40,6 +40,7 @@ export interface Settings {
   gofile_user: string | null;
   boss_key: string | null;
   wine_command: string | null;
+  auto_update_check: boolean;
 }
 
 export type SettingsPatch = Partial<
@@ -57,6 +58,7 @@ export type SettingsPatch = Partial<
     | "max_active_downloads"
     | "delete_archives"
     | "wine_command"
+    | "auto_update_check"
   >
 >;
 
@@ -460,6 +462,7 @@ export const api = {
   deepLinkTake: () => invoke<DeepLink | null>("deep_link_take"),
   updateCheck: () => invoke<{ version: string; notes: string | null } | null>("update_check"),
   updateInstall: () => invoke<void>("update_install"),
+  updateStatus: () => invoke<{ version: string; notes: string | null } | null>("update_status"),
   f95checkerDefaultPath: () => invoke<string | null>("f95checker_default_path"),
   importF95checker: (path: string) => invoke<F95CheckerImport>("f95checker_import", { path }),
   backupExport: (path: string) => invoke<number>("backup_export", { path }),

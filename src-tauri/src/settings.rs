@@ -38,6 +38,8 @@ pub struct Settings {
     /// Linux/macOS: program that runs Windows games (umu-run, wine, …).
     /// None = detect automatically.
     pub wine_command: Option<String>,
+    /// Look for launcher updates in the background (every 6 hours).
+    pub auto_update_check: bool,
 }
 
 impl Default for Settings {
@@ -62,6 +64,7 @@ impl Default for Settings {
             gofile_user: None,
             boss_key: None,
             wine_command: None,
+            auto_update_check: true,
         }
     }
 }
@@ -83,6 +86,7 @@ pub struct SettingsPatch {
     pub delete_archives: Option<bool>,
     /// Empty string = back to automatic.
     pub wine_command: Option<String>,
+    pub auto_update_check: Option<bool>,
 }
 
 impl Settings {
@@ -122,6 +126,9 @@ impl Settings {
         }
         if let Some(v) = p.delete_archives {
             self.delete_archives = v;
+        }
+        if let Some(v) = p.auto_update_check {
+            self.auto_update_check = v;
         }
         if let Some(v) = p.wine_command {
             self.wine_command = Some(v.trim().to_string()).filter(|s| !s.is_empty());

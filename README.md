@@ -142,7 +142,12 @@ Signing needs secrets, so they live only in the repository settings and are neve
    F95GM_UPDATER_PUBKEY="<public key>" F95GM_UPDATE_URL="https://f95api.xyz/launcher/latest.json" npm run tauri build -- --config '{"bundle":{"createUpdaterArtifacts":true}}'
    ```
    Then host the generated `latest.json` and the signed installer at that URL. Builds without these values never check for updates, and Settings says so.
-3. **Code signing:** sign the installer in CI, for example with Azure Trusted Signing, so Windows SmartScreen doesn't warn. The certificate never goes in the repo.
+3. **Ship a release:**
+   - Run `npm run version:set -- 0.2.0`, which sets the version in `package.json`, `tauri.conf.json`, `Cargo.toml` and `Cargo.lock`.
+   - Commit, then `git tag v0.2.0 && git push --tags`.
+   - Publish the draft release once CI has filled it.
+   - Installed apps check every 6 hours, starting a minute after launch, and show an **Update available** banner. "Install and restart" checks the signature, installs and restarts the app; queued downloads resume afterwards. You can turn automatic checks off in Settings → Updates.
+4. **Code signing:** sign the installer in CI, for example with Azure Trusted Signing, so Windows SmartScreen doesn't warn. The certificate never goes in the repo.
 
 ## Links and the browser extension
 

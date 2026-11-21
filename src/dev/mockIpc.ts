@@ -544,7 +544,7 @@ export function installMockIpc() {
         case "compat_status":
           return { runner: null };
         case "system_info":
-          return { autostart: sys.autostart, boss_key: sys.boss_key, pin_enabled: !!sys.pin, locked: sys.locked, updater_configured: false };
+          return { autostart: sys.autostart, boss_key: sys.boss_key, pin_enabled: !!sys.pin, locked: sys.locked, updater_configured: true };
         case "autostart_set":
           sys.autostart = args.enabled;
           return sys.autostart;
@@ -576,9 +576,16 @@ export function installMockIpc() {
           return null;
         case "deep_link_take":
           return null;
+        case "update_status":
+          return null;
         case "update_check":
+          return { version: "0.2.0", notes: "- Linux, Steam Deck and macOS support\n- Automatic updates" };
         case "update_install":
-          throw { kind: "invalid", message: "Automatic updates aren't set up in this build." };
+          for (let i = 1; i <= 5; i++) {
+            await delay(400);
+            await emit("update-progress", { downloaded: i * 4_000_000, total: 20_000_000 });
+          }
+          throw { kind: "invalid", message: "The mock can't restart the app." };
         case "f95checker_default_path":
           return "C:\\Users\\you\\AppData\\Roaming\\f95checker\\db.sqlite3";
         case "f95checker_import":

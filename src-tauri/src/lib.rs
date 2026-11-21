@@ -149,6 +149,8 @@ pub fn run() {
             tray::init(app.handle())?;
             sync::start(app.handle().clone());
             downloads::start(app.handle().clone());
+            app.manage(Arc::new(system::Updates::default()));
+            system::start_update_checks(app.handle().clone());
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -227,6 +229,7 @@ pub fn run() {
             system::autostart_set,
             system::update_check,
             system::update_install,
+            system::update_status,
             download_commands::f95_status,
             download_commands::f95_open,
             download_commands::links_get,
